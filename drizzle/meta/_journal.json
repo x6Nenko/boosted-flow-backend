@@ -8,6 +8,13 @@
       "when": 1764534175355,
       "tag": "0000_futuristic_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1764709077279,
+      "tag": "0001_silky_frog_thor",
+      "breakpoints": true
     }
   ]
 }

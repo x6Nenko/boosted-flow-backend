@@ -1,9 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
+import { UsersModule } from './users/users.module';
+import { AuthModule } from './auth/auth.module';
+import { AuthGuard } from './auth/guards/auth.guard';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -11,9 +17,19 @@ import { DatabaseModule } from './database/database.module';
       isGlobal: true,
       load: [configuration],
     }),
+    ScheduleModule.forRoot(),
     DatabaseModule,
+    UsersModule,
+    AuthModule,
+    TasksModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
 export class AppModule { }
