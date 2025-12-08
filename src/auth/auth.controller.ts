@@ -8,7 +8,7 @@ import { Public } from './decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute

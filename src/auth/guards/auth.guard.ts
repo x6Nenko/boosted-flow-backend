@@ -30,7 +30,7 @@ export class AuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractTokenFromHeader(request);
-    
+
     if (!token) {
       throw new UnauthorizedException('Missing authentication token');
     }
@@ -39,7 +39,7 @@ export class AuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync(token, {
         secret: this.configService.get<string>('jwt.secret'),
       });
-      
+
       // Attach user info to request for downstream use
       request['user'] = payload;
     } catch {

@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -33,7 +38,9 @@ export class AuthService {
       // Generate tokens
       return this.generateTokenPair(user.id, user.email);
     } catch (error) {
-      throw new InternalServerErrorException('Something went wrong, please try again later');
+      throw new InternalServerErrorException(
+        'Something went wrong, please try again later',
+      );
     }
   }
 
@@ -70,15 +77,16 @@ export class AuthService {
 
     // 3. Check token exists, matches hash, not expired, and not revoked
     const hashedToken = await this.hashToken(refreshToken);
-    const storedToken = await this.databaseService.db.query.refreshTokens.findFirst({
-    where: and(
-        eq(refreshTokens.id, payload.jti),
-        eq(refreshTokens.userId, payload.sub),
-        eq(refreshTokens.hashedToken, hashedToken),
-        eq(refreshTokens.revoked, false),
-        gt(refreshTokens.expiresAt, new Date().toISOString()),
-      ),
-    });
+    const storedToken =
+      await this.databaseService.db.query.refreshTokens.findFirst({
+        where: and(
+          eq(refreshTokens.id, payload.jti),
+          eq(refreshTokens.userId, payload.sub),
+          eq(refreshTokens.hashedToken, hashedToken),
+          eq(refreshTokens.revoked, false),
+          gt(refreshTokens.expiresAt, new Date().toISOString()),
+        ),
+      });
 
     if (!storedToken) {
       throw new UnauthorizedException('Refresh token not found or revoked');
@@ -111,8 +119,8 @@ export class AuthService {
       .where(
         and(
           eq(refreshTokens.id, payload.jti),
-          eq(refreshTokens.userId, payload.sub) // ownership check
-        )
+          eq(refreshTokens.userId, payload.sub), // ownership check
+        ),
       );
 
     return;
@@ -141,7 +149,9 @@ export class AuthService {
 
     // Store hashed refresh token
     const hashedToken = await this.hashToken(refreshToken);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     await this.databaseService.db.insert(refreshTokens).values({
       id: tokenId,
@@ -164,6 +174,6 @@ export class AuthService {
     // converts buffer into byte array so we can work with it
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     // converts bytes to hex string
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 }

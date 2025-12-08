@@ -41,9 +41,7 @@ describe('Auth (e2e)', () => {
 
   describe('Auth Guard', () => {
     it('should return 401 for protected routes without token', () => {
-      return request(app.getHttpServer())
-        .get('/')
-        .expect(401);
+      return request(app.getHttpServer()).get('/').expect(401);
     });
 
     it('should return 200 for protected routes with valid token', async () => {
@@ -118,9 +116,7 @@ describe('Auth (e2e)', () => {
       };
 
       // Register first
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send(user);
+      await request(app.getHttpServer()).post('/auth/register').send(user);
 
       // Then login
       const response = await request(app.getHttpServer())
@@ -134,12 +130,10 @@ describe('Auth (e2e)', () => {
 
     it('should return 401 for wrong password', async () => {
       // Register user
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({
-          email: 'user@example.com',
-          password: 'Password123!',
-        });
+      await request(app.getHttpServer()).post('/auth/register').send({
+        email: 'user@example.com',
+        password: 'Password123!',
+      });
 
       // Try to login with wrong password
       await request(app.getHttpServer())
@@ -276,9 +270,7 @@ describe('Auth (e2e)', () => {
         password: 'Password123!',
       };
 
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send(user);
+      await request(app.getHttpServer()).post('/auth/register').send(user);
 
       // Login from two devices
       const device1 = await request(app.getHttpServer())
@@ -352,5 +344,4 @@ describe('Auth (e2e)', () => {
         .expect(400);
     });
   });
-
 });

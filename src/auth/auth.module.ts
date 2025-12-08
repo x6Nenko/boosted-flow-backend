@@ -23,4 +23,4 @@ import { DatabaseModule } from '../database/database.module';
   providers: [AuthService],
   exports: [JwtModule],
 })
-export class AuthModule { }
+export class AuthModule {}

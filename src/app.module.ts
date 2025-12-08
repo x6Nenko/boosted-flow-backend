@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard } from './auth/guards/auth.guard';
 import { TasksModule } from './tasks/tasks.module';
+import { TimeEntriesModule } from './time-entries/time-entries.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TasksModule } from './tasks/tasks.module';
     UsersModule,
     AuthModule,
     TasksModule,
+    TimeEntriesModule,
   ],
   controllers: [AppController],
   providers: [
@@ -32,4 +34,4 @@ import { TasksModule } from './tasks/tasks.module';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

@@ -5,13 +5,16 @@ import { users } from '../database/schema';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly databaseService: DatabaseService) { }
+  constructor(private readonly databaseService: DatabaseService) {}
 
   private normalizeEmail(email: string): string {
     return email.toLowerCase().trim();
   }
 
-  async create(email: string, hashedPassword: string): Promise<typeof users.$inferSelect> {
+  async create(
+    email: string,
+    hashedPassword: string,
+  ): Promise<typeof users.$inferSelect> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const normalizedEmail = this.normalizeEmail(email);
@@ -30,7 +33,9 @@ export class UsersService {
     return user;
   }
 
-  async findByEmail(email: string): Promise<typeof users.$inferSelect | undefined> {
+  async findByEmail(
+    email: string,
+  ): Promise<typeof users.$inferSelect | undefined> {
     const normalizedEmail = this.normalizeEmail(email);
     return this.databaseService.db.query.users.findFirst({
       where: eq(users.email, normalizedEmail),

@@ -8,7 +8,7 @@ import { refreshTokens } from '../database/schema';
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
 
-  constructor(private readonly databaseService: DatabaseService) { }
+  constructor(private readonly databaseService: DatabaseService) {}
 
   // Clean up expired/revoked tokens daily at midnight
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
@@ -22,10 +22,12 @@ export class TasksService {
       .where(
         or(
           eq(refreshTokens.revoked, true),
-          lt(refreshTokens.expiresAt, new Date().toISOString())
-        )
+          lt(refreshTokens.expiresAt, new Date().toISOString()),
+        ),
       );
 
-    this.logger.log(`Token cleanup completed: ${result.rowsAffected ?? 0} tokens removed`);
+    this.logger.log(
+      `Token cleanup completed: ${result.rowsAffected ?? 0} tokens removed`,
+    );
   }
 }
