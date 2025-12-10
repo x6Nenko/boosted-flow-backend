@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
@@ -9,6 +10,19 @@ import { TestDatabaseService } from './setup/test-database.service';
 // Load test env vars before anything else
 process.env.JWT_SECRET = 'test-jwt-secret-for-e2e-testing-only';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
+
+// Helper function to extract cookies from supertest response headers
+function getCookies(headers: any): string[] {
+  const cookies = headers['set-cookie'];
+  if (!cookies) return [];
+  return Array.isArray(cookies) ? cookies : [cookies];
+}
+
+// Helper function to find refresh token cookie
+function getRefreshTokenCookie(headers: any): string | undefined {
+  const cookies = getCookies(headers);
+  return cookies.find((c: string) => c.startsWith('refreshToken='));
+}
 
 describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
@@ -27,6 +41,7 @@ describe('Auth (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    app.use(cookieParser());
     await app.init();
   });
 
@@ -63,7 +78,7 @@ describe('Auth (e2e)', () => {
   });
 
   describe('Register', () => {
-    it('should create a new user and return token pair', async () => {
+    it('should create a new user and return access token with refresh token cookie', async () => {
       const user = {
         email: 'newuser@example.com',
         password: 'SecurePass123!',
@@ -75,7 +90,15 @@ describe('Auth (e2e)', () => {
         .expect(201);
 
       expect(response.body).toHaveProperty('accessToken');
-      expect(response.body).toHaveProperty('refreshToken');
+      expect(response.body).not.toHaveProperty('refreshToken');
+      expect(response.headers['set-cookie']).toBeDefined();
+
+      // Verify refresh token cookie is set with correct properties
+      const refreshCookie = getRefreshTokenCookie(response.headers);
+      expect(refreshCookie).toBeDefined();
+      expect(refreshCookie).toContain('HttpOnly');
+      expect(refreshCookie).toContain('Path=/auth');
+      expect(refreshCookie).toContain('SameSite=Lax');
     });
 
     it('should return 409 when email already exists', async () => {
@@ -109,7 +132,7 @@ describe('Auth (e2e)', () => {
   });
 
   describe('Login', () => {
-    it('should login existing user and return token pair', async () => {
+    it('should login existing user and return access token with refresh token cookie', async () => {
       const user = {
         email: 'test@example.com',
         password: 'Password123!',
@@ -125,7 +148,11 @@ describe('Auth (e2e)', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('accessToken');
-      expect(response.body).toHaveProperty('refreshToken');
+      expect(response.body).not.toHaveProperty('refreshToken');
+      expect(response.headers['set-cookie']).toBeDefined();
+
+      const refreshCookie = getRefreshTokenCookie(response.headers);
+      expect(refreshCookie).toBeDefined();
     });
 
     it('should return 401 for wrong password', async () => {
@@ -170,7 +197,7 @@ describe('Auth (e2e)', () => {
         .expect(201);
 
       expect(registerRes.body.accessToken).toBeDefined();
-      expect(registerRes.body.refreshToken).toBeDefined();
+      expect(registerRes.body).not.toHaveProperty('refreshToken');
 
       // Step 2: Login with the same credentials
       const loginRes = await request(app.getHttpServer())
@@ -179,10 +206,11 @@ describe('Auth (e2e)', () => {
         .expect(200);
 
       expect(loginRes.body.accessToken).toBeDefined();
-      expect(loginRes.body.refreshToken).toBeDefined();
+      expect(loginRes.body).not.toHaveProperty('refreshToken');
 
       const loginAccessToken = loginRes.body.accessToken;
-      const loginRefreshToken = loginRes.body.refreshToken;
+      const loginRefreshCookie = getRefreshTokenCookie(loginRes.headers);
+      expect(loginRefreshCookie).toBeDefined();
 
       // Step 3: Access a protected route with the login token
       await request(app.getHttpServer())
@@ -193,17 +221,18 @@ describe('Auth (e2e)', () => {
       // Step 4: Refresh the token (simulating token expiration scenario)
       const refreshRes = await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: loginRefreshToken })
+        .set('Cookie', loginRefreshCookie!)
         .expect(200);
 
       expect(refreshRes.body.accessToken).toBeDefined();
-      expect(refreshRes.body.refreshToken).toBeDefined();
+      expect(refreshRes.body).not.toHaveProperty('refreshToken');
 
       const newAccessToken = refreshRes.body.accessToken;
-      const newRefreshToken = refreshRes.body.refreshToken;
+      const newRefreshCookie = getRefreshTokenCookie(refreshRes.headers);
+      expect(newRefreshCookie).toBeDefined();
 
-      // Verify refresh token rotation: new refresh token should be different
-      expect(newRefreshToken).not.toBe(loginRefreshToken);
+      // Verify refresh token rotation: new refresh cookie should be different
+      expect(newRefreshCookie).not.toBe(loginRefreshCookie);
 
       // Step 5: Access protected route with the refreshed token
       await request(app.getHttpServer())
@@ -214,20 +243,20 @@ describe('Auth (e2e)', () => {
       // Step 6: Old refresh token should be revoked (token rotation)
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: loginRefreshToken })
+        .set('Cookie', loginRefreshCookie!)
         .expect(401);
 
       // Step 7: Logout with the current refresh token
       await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Authorization', `Bearer ${newAccessToken}`)
-        .send({ refreshToken: newRefreshToken })
+        .set('Cookie', newRefreshCookie!)
         .expect(204);
 
       // Step 8: After logout, the refresh token should no longer work
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: newRefreshToken })
+        .set('Cookie', newRefreshCookie!)
         .expect(401);
     });
   });
@@ -236,7 +265,13 @@ describe('Auth (e2e)', () => {
     it('should return 401 when refreshing with invalid token format', async () => {
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: 'not-a-valid-jwt-token' })
+        .set('Cookie', 'refreshToken=not-a-valid-jwt-token')
+        .expect(401);
+    });
+
+    it('should return 401 when no refresh token cookie is provided', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/refresh')
         .expect(401);
     });
 
@@ -252,7 +287,8 @@ describe('Auth (e2e)', () => {
         .send(user)
         .expect(201);
 
-      const refreshToken = registerRes.body.refreshToken;
+      const refreshCookie = getRefreshTokenCookie(registerRes.headers);
+      expect(refreshCookie).toBeDefined();
 
       // Manually delete user from database using SQL
       await testDbService.clearDatabase();
@@ -260,7 +296,7 @@ describe('Auth (e2e)', () => {
       // Try to refresh - should fail because user no longer exists
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookie!)
         .expect(401);
     });
 
@@ -283,15 +319,20 @@ describe('Auth (e2e)', () => {
         .send(user)
         .expect(200);
 
+      const device1Cookie = getRefreshTokenCookie(device1.headers);
+      const device2Cookie = getRefreshTokenCookie(device2.headers);
+      expect(device1Cookie).toBeDefined();
+      expect(device2Cookie).toBeDefined();
+
       // Both tokens should work
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: device1.body.refreshToken })
+        .set('Cookie', device1Cookie!)
         .expect(200);
 
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken: device2.body.refreshToken })
+        .set('Cookie', device2Cookie!)
         .expect(200);
     });
   });
@@ -308,25 +349,27 @@ describe('Auth (e2e)', () => {
         .send(user)
         .expect(201);
 
-      const { accessToken, refreshToken } = registerRes.body;
+      const { accessToken } = registerRes.body;
+      const refreshCookie = getRefreshTokenCookie(registerRes.headers);
+      expect(refreshCookie).toBeDefined();
 
       // Logout
       await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ refreshToken })
+        .set('Cookie', refreshCookie!)
         .expect(204);
 
       // Try to use revoked token
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .send({ refreshToken })
+        .set('Cookie', refreshCookie!)
         .expect(401);
     });
 
-    it('should return 400 when refresh token is missing', async () => {
+    it('should return 204 even when refresh token cookie is missing', async () => {
       const user = {
-        email: 'logout@example.com',
+        email: 'logout-no-cookie@example.com',
         password: 'Password123!',
       };
 
@@ -337,11 +380,11 @@ describe('Auth (e2e)', () => {
 
       const { accessToken } = registerRes.body;
 
+      // Logout without cookie should succeed (idempotent)
       await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({})
-        .expect(400);
+        .expect(204);
     });
   });
 });

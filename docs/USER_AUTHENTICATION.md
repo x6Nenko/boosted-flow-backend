@@ -1,26 +1,27 @@
 # User Authentication Feature
 
 ## High-Level Purpose
-JWT-based authentication with access/refresh token rotation, bcrypt password hashing, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
+JWT-based authentication with HTTP-only cookie refresh tokens, access/refresh token rotation, bcrypt password hashing, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
 
 ---
 
 ## Architectural Map
 ```
 src/
+├── main.ts                     # CORS + cookie-parser middleware
+├── config/configuration.ts     # JWT secrets + frontend URL
 ├── auth/
 │   ├── auth.module.ts          # Feature module, configures JwtModule
-│   ├── auth.controller.ts      # HTTP endpoints (register, login, refresh, logout)
+│   ├── auth.controller.ts      # HTTP endpoints with cookie management
 │   ├── auth.service.ts         # Business logic, token generation, password hashing
 │   ├── guards/
 │   │   └── auth.guard.ts       # Global JWT validation guard
-│   └── decorators/
-│       ├── public.decorator.ts      # Marks routes as public (bypasses auth)
-│       └── current-user.decorator.ts # Extracts user from request
+│   ├── decorators/
+│   │   ├── public.decorator.ts      # Marks routes as public (bypasses auth)
+│   │   └── current-user.decorator.ts # Extracts user from request
 │   └── dto/
 │       ├── register.dto.ts     # Validation: email, password (8-72 chars)
-│       ├── login.dto.ts        # Validation: email, password
-│       └── refresh.dto.ts      # Validation: refreshToken
+│       └── login.dto.ts        # Validation: email, password
 ├── users/
 │   ├── users.module.ts         # Exports UsersService
 │   └── users.service.ts        # User CRUD operations
@@ -42,27 +43,33 @@ src/
 2. `AuthService.register()` → checks email uniqueness via `UsersService.findByEmail()`
 3. Password hashed with `bcrypt.hash(password, 12)` (cost factor 12)
 4. `UsersService.create()` → inserts user with UUID, normalized email, timestamps
-5. `generateTokenPair()` → creates access token (15m) + refresh token (7d)
+5. `generateTokens()` → creates access token (15m) + refresh token (7d)
 6. Refresh token hashed (SHA-256) and stored in `refresh_tokens` table
-7. Response: `{ accessToken, refreshToken }`
+7. **Controller sets HTTP-only cookie** with `setRefreshTokenCookie(res, refreshToken)`
+8. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=...`
 
 ### Login
 1. `POST /auth/login` → `LoginDto` validates input
 2. Fetch user by email → `bcrypt.compare()` validates password
-3. `generateTokenPair()` → new token pair issued
-4. Response: `{ accessToken, refreshToken }`
+3. `generateTokens()` → new token pair issued
+4. **Controller sets HTTP-only cookie** with refresh token
+5. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=...`
 
 ### Token Refresh
-1. `POST /auth/refresh` → `RefreshDto` provides refresh token
-2. Verify JWT signature with `jwt.refreshSecret`
-3. Validate user exists via `UsersService.findById()`
-4. Check stored token: hash match, not expired, not revoked
-5. **Rotate**: revoke old token → issue new pair
-6. Response: `{ accessToken, refreshToken }`
+1. `POST /auth/refresh` → **Controller extracts** `req.cookies['refreshToken']`
+2. Throws `UnauthorizedException` if cookie missing
+3. Verify JWT signature with `jwt.refreshSecret`
+4. Validate user exists via `UsersService.findById()`
+5. Check stored token: hash match, not expired, not revoked
+6. **Rotate**: revoke old token → issue new pair
+7. **Controller sets new HTTP-only cookie** (rotation)
+8. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=NEW`
 
 ### Logout
-1. `POST /auth/logout` → marks refresh token as revoked in DB
-2. Response: `204 No Content`
+1. `POST /auth/logout` → **Controller extracts** `req.cookies['refreshToken']`
+2. Marks refresh token as revoked in DB (silently succeeds if missing)
+3. **Controller clears cookie** with `clearRefreshTokenCookie(res)`
+4. Response: `204 No Content`
 
 ### Protected Routes
 1. `AuthGuard` extracts Bearer token from `Authorization` header
@@ -78,11 +85,15 @@ src/
 | **Global Guard** | `AuthGuard` registered as `APP_GUARD` in `AppModule` |
 | **Public Routes** | `@Public()` decorator + `IS_PUBLIC_KEY` metadata |
 | **Custom Param Decorator** | `@CurrentUser()` extracts `request.user` |
+| **HTTP-only Cookies** | Refresh tokens via `res.cookie()` with `httpOnly`, `secure`, `sameSite=lax` |
+| **Cookie Middleware** | `cookie-parser` in `main.ts` for request cookie parsing |
+| **CORS with Credentials** | `credentials: true` + exact `origin` match for cookie support |
 | **Rate Limiting** | `@Throttle({ default: { limit: 10, ttl: 60000 } })` per endpoint |
 | **Async JWT Config** | `JwtModule.registerAsync()` with `ConfigService` injection |
 | **Token Rotation** | Old refresh token revoked on each refresh |
 | **Scheduled Tasks** | `@Cron(EVERY_DAY_AT_MIDNIGHT)` for token cleanup |
 | **DTO Validation** | `class-validator` decorators (`@IsEmail`, `@MinLength`, etc.) |
+| **Response Passthrough** | `@Res({ passthrough: true })` to set cookies + return JSON |
 
 ---
 
@@ -90,10 +101,11 @@ src/
 
 ### AuthController (`/auth`)
 ```typescript
-@Post('register')  register(@Body() dto: RegisterDto): Promise<TokenPair>
-@Post('login')     login(@Body() dto: LoginDto): Promise<TokenPair>
-@Post('refresh')   refresh(@Body() dto: RefreshDto): Promise<TokenPair>
-@Post('logout')    logout(@Body() dto: RefreshDto): Promise<void>
+@Post('register')  register(@Body() dto: RegisterDto, @Res() res): Promise<{ accessToken }>
+@Post('login')     login(@Body() dto: LoginDto, @Res() res): Promise<{ accessToken }>
+@Post('refresh')   refresh(@Req() req, @Res() res): Promise<{ accessToken }>
+@Post('logout')    logout(@Req() req, @Res() res): Promise<void>
+// private: setRefreshTokenCookie(), clearRefreshTokenCookie()
 ```
 
 ### AuthService
@@ -102,7 +114,7 @@ register(email: string, password: string): Promise<TokenPair>
 login(email: string, password: string): Promise<TokenPair>
 refresh(refreshToken: string): Promise<TokenPair>
 logout(refreshToken: string): Promise<void>
-// private: generateTokenPair(), hashToken()
+// private: generateTokens(), hashToken()
 ```
 
 ### UsersService
@@ -117,6 +129,8 @@ findById(id: string): Promise<User | undefined>
 ```typescript
 { accessToken: string; refreshToken: string }
 ```
+
+**Note:** Controller returns only `{ accessToken }` in body; refresh token set as HTTP-only cookie
 
 ---
 
@@ -149,10 +163,14 @@ findById(id: string): Promise<User | undefined>
 jwt: {
   secret: process.env.JWT_SECRET,        // Access token signing
   refreshSecret: process.env.JWT_REFRESH_SECRET  // Refresh token signing
+},
+frontend: {
+  url: process.env.FRONTEND_URL || 'http://localhost:5173'  // CORS origin
 }
 ```
 
-**Token Lifetimes**: Access = 15 minutes, Refresh = 7 days
+**Token Lifetimes**: Access = 15 minutes, Refresh = 7 days  
+**Cookie Settings**: `httpOnly`, `secure` (prod), `sameSite=lax`, `path=/auth`, `maxAge=7d`
 
 ---
 
@@ -170,6 +188,14 @@ jwt: {
 10. **Logout behavior**: Silently succeeds even if token invalid (no error thrown)
 11. **Error messages**: Login/register use generic "Invalid credentials" to prevent user enumeration
 12. **Request user shape**: After auth, `request.user` = `{ sub: userId, email }`
+13. **Cookie middleware**: `cookie-parser` must be registered in `main.ts` before routes
+14. **CORS credentials**: `credentials: true` + exact origin match required for cookie transport
+15. **Response decorator**: Use `@Res({ passthrough: true })` to return JSON + set cookies
+16. **Cookie extraction**: Access via `req.cookies['refreshToken']`, not request body
+17. **Refresh endpoint**: No DTO needed—token extracted from cookie automatically
+18. **Cookie scope**: Refresh token cookie scoped to `/auth` path only
+19. **Secure flag**: Automatically enabled in production (`NODE_ENV=production`)
+20. **Frontend requirement**: Must set `withCredentials: true` in HTTP client (Axios/Fetch)
 
 ---
 
@@ -179,5 +205,6 @@ jwt: {
 "@nestjs/schedule": "^6.0.1",
 "@nestjs/throttler": "^6.5.0",
 "bcryptjs": "^3.0.3",
+"cookie-parser": "^1.4.7",
 "uuid": "^13.0.0"
 ```

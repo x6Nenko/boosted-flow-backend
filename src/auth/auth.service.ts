@@ -20,7 +20,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly databaseService: DatabaseService,
-  ) {}
+  ) { }
 
   async register(email: string, password: string) {
     // Check if user exists
@@ -36,7 +36,7 @@ export class AuthService {
       // Create user
       const user = await this.usersService.create(email, hashedPassword);
       // Generate tokens
-      return this.generateTokenPair(user.id, user.email);
+      return this.generateTokens(user.id, user.email);
     } catch (error) {
       throw new InternalServerErrorException(
         'Something went wrong, please try again later',
@@ -55,7 +55,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.generateTokenPair(user.id, user.email);
+    return this.generateTokens(user.id, user.email);
   }
 
   async refresh(refreshToken: string) {
@@ -99,7 +99,7 @@ export class AuthService {
       .where(eq(refreshTokens.id, payload.jti));
 
     // 5. Generate new pair
-    return this.generateTokenPair(user.id, user.email);
+    return this.generateTokens(user.id, user.email);
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -126,10 +126,10 @@ export class AuthService {
     return;
   }
 
-  private async generateTokenPair(userId: string, email: string) {
+  private async generateTokens(userId: string, email: string) {
     const tokenId = uuidv4();
 
-    // Access token - short lived
+    // Access token - short lived (returned in body)
     const accessToken = await this.jwtService.signAsync(
       { sub: userId, email },
       {
@@ -138,7 +138,7 @@ export class AuthService {
       },
     );
 
-    // Refresh token - long lived with unique ID (jti)
+    // Refresh token - long lived with unique ID (jti) (set as HTTP-only cookie)
     const refreshToken = await this.jwtService.signAsync(
       { sub: userId, jti: tokenId },
       {
