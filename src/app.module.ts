@@ -8,7 +8,7 @@ import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { AuthGuard } from './auth/guards/auth.guard';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TasksModule } from './tasks/tasks.module';
 import { TimeEntriesModule } from './time-entries/time-entries.module';
 
@@ -30,8 +30,8 @@ import { TimeEntriesModule } from './time-entries/time-entries.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: AuthGuard,
+      useClass: JwtAuthGuard,
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

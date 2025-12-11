@@ -1,7 +1,7 @@
 # User Authentication Feature
 
 ## High-Level Purpose
-JWT-based authentication with HTTP-only cookie refresh tokens, access/refresh token rotation, bcrypt password hashing, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
+Passport JWT-based authentication with HTTP-only cookie refresh tokens, access/refresh token rotation, bcrypt password hashing, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
 
 ---
 
@@ -11,11 +11,13 @@ src/
 ├── main.ts                     # CORS + cookie-parser middleware
 ├── config/configuration.ts     # JWT secrets + frontend URL
 ├── auth/
-│   ├── auth.module.ts          # Feature module, configures JwtModule
+│   ├── auth.module.ts          # Feature module, configures JwtModule + PassportModule
 │   ├── auth.controller.ts      # HTTP endpoints with cookie management
 │   ├── auth.service.ts         # Business logic, token generation, password hashing
+│   ├── strategies/
+│   │   └── jwt.strategy.ts     # Passport JWT strategy for access token validation
 │   ├── guards/
-│   │   └── auth.guard.ts       # Global JWT validation guard
+│   │   └── jwt-auth.guard.ts   # Global JWT guard (extends AuthGuard('jwt'))
 │   ├── decorators/
 │   │   ├── public.decorator.ts      # Marks routes as public (bypasses auth)
 │   │   └── current-user.decorator.ts # Extracts user from request
@@ -72,9 +74,10 @@ src/
 4. Response: `204 No Content`
 
 ### Protected Routes
-1. `AuthGuard` extracts Bearer token from `Authorization` header
-2. Verifies with `jwt.secret` → attaches payload to `request.user`
+1. `JwtAuthGuard` (extends `AuthGuard('jwt')`) extracts Bearer token from `Authorization` header
+2. `JwtStrategy` validates token with `jwt.secret` → attaches payload to `request.user`
 3. Use `@CurrentUser()` decorator to access user in handlers
+4. User object contains only `{ userId }` - fetch email/other data from DB when needed
 
 ---
 
@@ -82,7 +85,8 @@ src/
 
 | Pattern | Implementation |
 |---------|----------------|
-| **Global Guard** | `AuthGuard` registered as `APP_GUARD` in `AppModule` |
+| **Global Guard** | `JwtAuthGuard` registered as `APP_GUARD` in `AppModule` |
+| **Passport Strategy** | `JwtStrategy` extends `PassportStrategy(Strategy)` for JWT validation |
 | **Public Routes** | `@Public()` decorator + `IS_PUBLIC_KEY` metadata |
 | **Custom Param Decorator** | `@CurrentUser()` extracts `request.user` |
 | **HTTP-only Cookies** | Refresh tokens via `res.cookie()` with `httpOnly`, `secure`, `sameSite=lax` |
@@ -187,7 +191,7 @@ frontend: {
 9. **Token cleanup**: Cron runs at midnight—expired/revoked tokens deleted daily
 10. **Logout behavior**: Silently succeeds even if token invalid (no error thrown)
 11. **Error messages**: Login/register use generic "Invalid credentials" to prevent user enumeration
-12. **Request user shape**: After auth, `request.user` = `{ sub: userId, email }`
+12. **Request user shape**: After auth, `request.user` = `{ userId }` (email removed from payload)
 13. **Cookie middleware**: `cookie-parser` must be registered in `main.ts` before routes
 14. **CORS credentials**: `credentials: true` + exact origin match required for cookie transport
 15. **Response decorator**: Use `@Res({ passthrough: true })` to return JSON + set cookies
@@ -202,8 +206,11 @@ frontend: {
 ## Dependencies
 ```json
 "@nestjs/jwt": "^11.0.1",
+"@nestjs/passport": "^10.0.3",
 "@nestjs/schedule": "^6.0.1",
 "@nestjs/throttler": "^6.5.0",
+"passport": "^0.7.0",
+"passport-jwt": "^4.0.1",
 "bcryptjs": "^3.0.3",
 "cookie-parser": "^1.4.7",
 "uuid": "^13.0.0"
