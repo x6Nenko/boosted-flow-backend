@@ -8,8 +8,12 @@ import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
 
 // Load test env vars before anything else
+process.env.NODE_ENV = 'test'; // turns rate limiting offf
 process.env.JWT_SECRET = 'test-jwt-secret-for-e2e-testing-only';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
+process.env.JWT_ACCESS_EXPIRATION = '1h';
+process.env.JWT_REFRESH_EXPIRATION = '30d';
+process.env.JWT_ROTATION_PERIOD = '1h';
 
 // Helper function to extract cookies from supertest response headers
 function getCookies(headers: any): string[] {
@@ -231,8 +235,8 @@ describe('Auth (e2e)', () => {
       const newRefreshCookie = getRefreshTokenCookie(refreshRes.headers);
       expect(newRefreshCookie).toBeDefined();
 
-      // Verify refresh token rotation: new refresh cookie should be different
-      expect(newRefreshCookie).not.toBe(loginRefreshCookie);
+      // Verify refresh token is reused (rotation period not exceeded)
+      expect(newRefreshCookie).toBe(loginRefreshCookie);
 
       // Step 5: Access protected route with the refreshed token
       await request(app.getHttpServer())
@@ -240,23 +244,23 @@ describe('Auth (e2e)', () => {
         .set('Authorization', `Bearer ${newAccessToken}`)
         .expect(200);
 
-      // Step 6: Old refresh token should be revoked (token rotation)
+      // Step 6: Old refresh token should still work (not rotated yet)
       await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Cookie', loginRefreshCookie!)
-        .expect(401);
+        .expect(200);
 
       // Step 7: Logout with the current refresh token
       await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Authorization', `Bearer ${newAccessToken}`)
-        .set('Cookie', newRefreshCookie!)
+        .set('Cookie', loginRefreshCookie!)
         .expect(204);
 
       // Step 8: After logout, the refresh token should no longer work
       await request(app.getHttpServer())
         .post('/auth/refresh')
-        .set('Cookie', newRefreshCookie!)
+        .set('Cookie', loginRefreshCookie!)
         .expect(401);
     });
   });

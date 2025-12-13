@@ -92,14 +92,33 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token not found or revoked');
     }
 
-    // 4. Revoke old token (rotation)
-    await this.databaseService.db
-      .update(refreshTokens)
-      .set({ revoked: true })
-      .where(eq(refreshTokens.id, payload.jti));
+    // 4. Check if refresh token should be rotated (based on JWT_ROTATION_PERIOD)
+    const tokenAge = Date.now() - new Date(storedToken.createdAt).getTime();
+    const rotationPeriod = this.configService.get<string>('jwt.rotationPeriod')!;
+    const rotationPeriodMs = this.parseExpiration(rotationPeriod);
+    const shouldRotate = tokenAge > rotationPeriodMs;
 
-    // 5. Generate new pair
-    return this.generateTokens(user.id);
+    if (shouldRotate) {
+      // Revoke old token and generate new pair
+      await this.databaseService.db
+        .update(refreshTokens)
+        .set({ revoked: true })
+        .where(eq(refreshTokens.id, payload.jti));
+
+      return this.generateTokens(user.id);
+    } else {
+      // Only generate new access token, reuse refresh token
+      const accessExpiration = this.configService.get<string>('jwt.accessExpiration')!;
+      const accessToken = await this.jwtService.signAsync(
+        { sub: user.id },
+        {
+          secret: this.configService.get<string>('jwt.secret'),
+          expiresIn: accessExpiration as any,
+        },
+      );
+
+      return { accessToken, refreshToken };
+    }
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -129,13 +148,16 @@ export class AuthService {
   private async generateTokens(userId: string) {
     const tokenId = uuidv4();
 
+    const accessExpiration = this.configService.get<string>('jwt.accessExpiration')!;
+    const refreshExpiration = this.configService.get<string>('jwt.refreshExpiration')!;
+
     // Access token - short lived (returned in body)
     // Only contains userId (sub) - no email to minimize payload
     const accessToken = await this.jwtService.signAsync(
       { sub: userId },
       {
         secret: this.configService.get<string>('jwt.secret'),
-        expiresIn: '15m',
+        expiresIn: accessExpiration as any,
       },
     );
 
@@ -144,14 +166,14 @@ export class AuthService {
       { sub: userId, jti: tokenId },
       {
         secret: this.configService.get<string>('jwt.refreshSecret'),
-        expiresIn: '7d',
+        expiresIn: refreshExpiration as any,
       },
     );
 
     // Store hashed refresh token
     const hashedToken = await this.hashToken(refreshToken);
     const expiresAt = new Date(
-      Date.now() + 7 * 24 * 60 * 60 * 1000,
+      Date.now() + this.parseExpiration(refreshExpiration),
     ).toISOString();
 
     await this.databaseService.db.insert(refreshTokens).values({
@@ -176,5 +198,19 @@ export class AuthService {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     // converts bytes to hex string
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  private parseExpiration(expiration: string): number {
+    const unit = expiration.slice(-1);
+    const value = parseInt(expiration.slice(0, -1), 10);
+
+    const multipliers: Record<string, number> = {
+      s: 1000,
+      m: 60 * 1000,
+      h: 60 * 60 * 1000,
+      d: 24 * 60 * 60 * 1000,
+    };
+
+    return value * (multipliers[unit] || 0);
   }
 }

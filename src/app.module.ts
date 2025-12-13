@@ -39,10 +39,15 @@ import { TimeEntriesModule } from './time-entries/time-entries.module';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    // Conditionally register ThrottlerGuard - disabled in test environment
+    ...(process.env.NODE_ENV !== 'test'
+      ? [
+        {
+          provide: APP_GUARD,
+          useClass: ThrottlerGuard,
+        },
+      ]
+      : []),
   ],
 })
 export class AppModule { }

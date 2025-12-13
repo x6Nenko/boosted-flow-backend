@@ -7,6 +7,7 @@ import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
 
 // Load test env vars before anything else
+process.env.NODE_ENV = 'test'; // turns rate limiting offf
 process.env.JWT_SECRET = 'test-jwt-secret-for-e2e-testing-only';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
 

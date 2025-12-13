@@ -59,7 +59,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
+  @Throttle({ default: { limit: 60, ttl: 60000 } }) // 60 attempts per minute
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
