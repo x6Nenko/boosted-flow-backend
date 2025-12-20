@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto';
@@ -6,6 +7,8 @@ import { StartTimeEntryDto } from './dto/start-time-entry.dto';
 import { StopTimeEntryDto } from './dto/stop-time-entry.dto';
 import { TimeEntriesService } from './time-entries.service';
 
+@ApiTags('time-entries')
+@ApiBearerAuth()
 @Controller('time-entries')
 export class TimeEntriesController {
   constructor(private readonly timeEntriesService: TimeEntriesService) { }
