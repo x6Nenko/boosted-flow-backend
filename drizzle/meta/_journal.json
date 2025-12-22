@@ -29,6 +29,20 @@
       "when": 1765218742441,
       "tag": "0003_dazzling_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1766435463954,
+      "tag": "0004_known_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1766436513052,
+      "tag": "0005_mysterious_killmonger",
+      "breakpoints": true
     }
   ]
 }
