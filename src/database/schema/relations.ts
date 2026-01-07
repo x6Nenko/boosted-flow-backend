@@ -1,18 +1,18 @@
 import { relations } from 'drizzle-orm';
 import { users } from './users';
-import { habits } from './habits';
+import { activities } from './activities';
 import { timeEntries } from './time-entries';
 import { refreshTokens } from './refresh-tokens';
 
 export const usersRelations = relations(users, ({ many }) => ({
-  habits: many(habits),
+  activities: many(activities),
   timeEntries: many(timeEntries),
   refreshTokens: many(refreshTokens),
 }));
 
-export const habitsRelations = relations(habits, ({ one, many }) => ({
+export const activitiesRelations = relations(activities, ({ one, many }) => ({
   user: one(users, {
-    fields: [habits.userId],
+    fields: [activities.userId],
     references: [users.id],
   }),
   timeEntries: many(timeEntries),
@@ -23,9 +23,9 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
     fields: [timeEntries.userId],
     references: [users.id],
   }),
-  habit: one(habits, {
-    fields: [timeEntries.habitId],
-    references: [habits.id],
+  activity: one(activities, {
+    fields: [timeEntries.activityId],
+    references: [activities.id],
   }),
 }));
 

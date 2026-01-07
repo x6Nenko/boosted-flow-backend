@@ -1,5 +1,5 @@
 export * from './users';
-export * from './habits';
+export * from './activities';
 export * from './time-entries';
 export * from './refresh-tokens';
 export * from './relations';

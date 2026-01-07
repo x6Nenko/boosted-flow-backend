@@ -102,6 +102,7 @@ type TimeEntry = typeof timeEntries.$inferSelect
 |--------|------|-------|
 | id | TEXT PK | UUID |
 | userId | TEXT FK | References `users.id`, cascade delete |
+| activityId | TEXT FK | References `activities.id`, nullable, cascade delete |
 | description | TEXT | Nullable, max 500 chars (DTO enforced) |
 | startedAt | TEXT | ISO string, NOT NULL |
 | stoppedAt | TEXT | ISO string, NULL = active |
@@ -110,6 +111,8 @@ type TimeEntry = typeof timeEntries.$inferSelect
 ### Relations
 - `users` → `timeEntries`: One-to-Many
 - `timeEntries` → `user`: Many-to-One
+- `activities` → `timeEntries`: One-to-Many
+- `timeEntries` → `activity`: Many-to-One (nullable)
 
 ---
 
