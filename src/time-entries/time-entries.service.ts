@@ -3,11 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '../database/database.service';
 import { ActivitiesService } from '../activities/activities.service';
-import { timeEntries } from '../database/schema';
+import { dailyTimeEntryCounts, timeEntries } from '../database/schema';
 
 type TimeEntry = typeof timeEntries.$inferSelect;
 
@@ -17,6 +17,11 @@ export class TimeEntriesService {
     private readonly databaseService: DatabaseService,
     private readonly activitiesService: ActivitiesService,
   ) { }
+
+  private toIsoDate(input: string): string {
+    // Accept both full ISO timestamps and YYYY-MM-DD.
+    return input.split('T')[0];
+  }
 
   async start(
     userId: string,
@@ -91,6 +96,25 @@ export class TimeEntriesService {
       durationSeconds,
     );
 
+    const date = stoppedAt.split('T')[0]; // YYYY-MM-DD
+
+    await this.databaseService.db
+      .insert(dailyTimeEntryCounts)
+      .values({
+        userId,
+        date,
+        count: 1,
+        createdAt: stoppedAt,
+        updatedAt: stoppedAt,
+      })
+      .onConflictDoUpdate({
+        target: [dailyTimeEntryCounts.userId, dailyTimeEntryCounts.date],
+        set: {
+          count: sql`${dailyTimeEntryCounts.count} + 1`,
+          updatedAt: stoppedAt,
+        },
+      });
+
     return updated;
   }
 
@@ -119,6 +143,31 @@ export class TimeEntriesService {
     return this.databaseService.db.query.timeEntries.findMany({
       where: and(...conditions),
       orderBy: (timeEntries, { desc }) => [desc(timeEntries.startedAt)],
+    });
+  }
+
+  async getHeatmap(
+    userId: string,
+    from?: string,
+    to?: string,
+  ): Promise<Array<{ date: string; count: number }>> {
+    const conditions = [eq(dailyTimeEntryCounts.userId, userId)];
+
+    if (from) {
+      conditions.push(gte(dailyTimeEntryCounts.date, this.toIsoDate(from)));
+    }
+
+    if (to) {
+      conditions.push(lte(dailyTimeEntryCounts.date, this.toIsoDate(to)));
+    }
+
+    return this.databaseService.db.query.dailyTimeEntryCounts.findMany({
+      where: and(...conditions),
+      columns: {
+        date: true,
+        count: true,
+      },
+      orderBy: (dailyTimeEntryCounts, { asc }) => [asc(dailyTimeEntryCounts.date)],
     });
   }
 }

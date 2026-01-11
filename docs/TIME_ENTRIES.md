@@ -18,6 +18,7 @@ src/
 │       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
+    ├── daily-time-entry-counts.ts   # Pre-aggregated daily entry counts (heatmap)
     └── relations.ts                # User ↔ TimeEntry, Activity ↔ TimeEntry relations
 ```
 
@@ -40,7 +41,8 @@ src/
 4. If already stopped → `ConflictException` (409)
 5. Updates `stoppedAt` to current timestamp
 6. Calculates duration and calls `ActivitiesService.updateProgress()` to update tracked duration + streaks
-7. Response: Updated `TimeEntry` object
+7. Increments daily heatmap counter (`daily_time_entry_counts`) for `userId` + `YYYY-MM-DD`
+8. Response: Updated `TimeEntry` object
 
 ### Get All Entries
 1. `GET /time-entries?from=&to=` → `GetTimeEntriesQueryDto` validates ISO8601 dates
@@ -52,6 +54,12 @@ src/
 1. `GET /time-entries/current` → no body/params required
 2. `TimeEntriesService.findActive()` → queries for entry where `stoppedAt IS NULL`
 3. Response: `{ entry: TimeEntry | null }` (wrapped for JSON serialization)
+
+### Get Heatmap Data
+1. `GET /time-entries/heatmap?from=&to=` → optional ISO8601 from/to
+2. `TimeEntriesService.getHeatmap()` → reads from pre-aggregated `daily_time_entry_counts`
+3. Filters: `userId` (always), `date >= from` (optional), `date <= to` (optional)
+4. Response: Array of `{ date, count }` rows (days with no entries are omitted)
 
 ---
 
@@ -68,6 +76,7 @@ src/
 | **Dynamic Query Building** | `findAll` uses conditional `and()` with optional date filters |
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes entries |
 | **Side-Effect Progress Update** | `stop()` calls `ActivitiesService.updateProgress()` |
+| **Pre-Aggregated Heatmap** | `stop()` increments `daily_time_entry_counts` for fast heatmap reads |
 
 ---
 
@@ -79,6 +88,7 @@ src/
 @Post('stop')    stop(@CurrentUser() user, @Body() dto: StopTimeEntryDto): Promise<TimeEntry>
 @Get()           findAll(@CurrentUser() user, @Query() query: GetTimeEntriesQueryDto): Promise<TimeEntry[]>
 @Get('current')  findCurrent(@CurrentUser() user): Promise<{ entry: TimeEntry | null }>
+@Get('heatmap')  getHeatmap(@CurrentUser() user, @Query() query: GetHeatmapQueryDto): Promise<Array<{ date: string; count: number }>>
 ```
 
 ### TimeEntriesService
@@ -87,6 +97,7 @@ start(userId: string, activityId: string, description?: string): Promise<TimeEnt
 stop(userId: string, id: string): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntry | null>
 findAll(userId: string, from?: string, to?: string): Promise<TimeEntry[]>
+getHeatmap(userId: string, from?: string, to?: string): Promise<Array<{ date: string; count: number }>>
 ```
 
 ### TimeEntry Type
@@ -110,11 +121,21 @@ type TimeEntry = typeof timeEntries.$inferSelect
 | stoppedAt | TEXT | ISO string, NULL = active |
 | createdAt | TEXT | ISO string |
 
+### `daily_time_entry_counts`
+| Column | Type | Notes |
+|--------|------|-------|
+| userId | TEXT PK | Composite PK (`userId`, `date`), cascade delete |
+| date | TEXT PK | ISO date string (YYYY-MM-DD) |
+| count | INTEGER | NOT NULL, DEFAULT 0 |
+| createdAt | TEXT | ISO string |
+| updatedAt | TEXT | ISO string |
+
 ### Relations
 - `users` → `timeEntries`: One-to-Many
 - `timeEntries` → `user`: Many-to-One
 - `activities` → `timeEntries`: One-to-Many
 - `timeEntries` → `activity`: Many-to-One
+- `users` → `dailyTimeEntryCounts`: One-to-Many
 
 ---
 
@@ -131,6 +152,9 @@ type TimeEntry = typeof timeEntries.$inferSelect
 9. **Description limit**: 500 chars max enforced at DTO level, not database level
 10. **Cascade behavior**: Deleting a user removes all their time entries automatically
 11. **Progress side effect**: Stopping a time entry updates the linked activity's tracked duration + streaks
+12. **Heatmap updates happen on stop**: Starting a timer does not affect `daily_time_entry_counts`
+13. **Heatmap is derived data**: It should never be edited directly via API—only updated by `stop()`
+14. **Missing days are not returned**: Heatmap endpoint returns only days that have at least one stopped entry
 
 ---
 

@@ -63,6 +63,15 @@ export class TestDatabaseService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS daily_time_entry_counts (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, date)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_user_archived ON activities(user_id, archived_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_activity_date ON time_entries(activity_id, started_at);
@@ -75,6 +84,7 @@ export class TestDatabaseService {
   async clearDatabase() {
     await this.client.executeMultiple(`
       DELETE FROM time_entries;
+      DELETE FROM daily_time_entry_counts;
       DELETE FROM activities;
       DELETE FROM refresh_tokens;
       DELETE FROM users;

@@ -2,13 +2,25 @@ import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { activities } from './activities';
 import { timeEntries } from './time-entries';
+import { dailyTimeEntryCounts } from './daily-time-entry-counts';
 import { refreshTokens } from './refresh-tokens';
 
 export const usersRelations = relations(users, ({ many }) => ({
   activities: many(activities),
   timeEntries: many(timeEntries),
+  dailyTimeEntryCounts: many(dailyTimeEntryCounts),
   refreshTokens: many(refreshTokens),
 }));
+
+export const dailyTimeEntryCountsRelations = relations(
+  dailyTimeEntryCounts,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [dailyTimeEntryCounts.userId],
+      references: [users.id],
+    }),
+  }),
+);
 
 export const activitiesRelations = relations(activities, ({ one, many }) => ({
   user: one(users, {
