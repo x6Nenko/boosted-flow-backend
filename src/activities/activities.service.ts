@@ -14,6 +14,50 @@ type Activity = typeof activities.$inferSelect;
 export class ActivitiesService {
   constructor(private readonly databaseService: DatabaseService) { }
 
+  private calculateStreakUpdate(args: {
+    durationDelta: number;
+    currentStreak: number;
+    longestStreak: number;
+    lastCompletedDate: string | null;
+    now: Date;
+  }): {
+    currentStreak: number;
+    longestStreak: number;
+    lastCompletedDate: string | null;
+  } {
+    const today = args.now.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    let currentStreak = args.currentStreak;
+    let longestStreak = args.longestStreak;
+    let lastCompletedDate = args.lastCompletedDate;
+
+    // Streak rule (simple): count 1 completion per day when any positive time is logged.
+    // If already completed today, do nothing.
+    if (args.durationDelta > 0 && lastCompletedDate !== today) {
+      const yesterday = new Date(args.now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      if (lastCompletedDate === yesterdayStr) {
+        currentStreak += 1;
+      } else {
+        currentStreak = 1;
+      }
+
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+
+      lastCompletedDate = today;
+    }
+
+    return {
+      currentStreak,
+      longestStreak,
+      lastCompletedDate,
+    };
+  }
+
   async create(
     userId: string,
     name: string,
@@ -145,40 +189,24 @@ export class ActivitiesService {
     const activity = await this.findById(userId, activityId);
 
     const newTrackedDuration = activity.trackedDuration + durationDelta;
-    const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
 
-    let currentStreak = activity.currentStreak;
-    let longestStreak = activity.longestStreak;
-    let lastCompletedDate = activity.lastCompletedDate;
-
-    // Streak rule (simple): count 1 completion per day when any positive time is logged.
-    // If already completed today, do nothing.
-    if (durationDelta > 0 && lastCompletedDate !== today) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-      if (lastCompletedDate === yesterdayStr) {
-        currentStreak += 1;
-      } else {
-        currentStreak = 1;
-      }
-
-      if (currentStreak > longestStreak) {
-        longestStreak = currentStreak;
-      }
-
-      lastCompletedDate = today;
-    }
+    const streakUpdate = this.calculateStreakUpdate({
+      durationDelta,
+      currentStreak: activity.currentStreak,
+      longestStreak: activity.longestStreak,
+      lastCompletedDate: activity.lastCompletedDate,
+      now: nowDate,
+    });
 
     const [updated] = await this.databaseService.db
       .update(activities)
       .set({
         trackedDuration: newTrackedDuration,
-        currentStreak,
-        longestStreak,
-        lastCompletedDate,
+        currentStreak: streakUpdate.currentStreak,
+        longestStreak: streakUpdate.longestStreak,
+        lastCompletedDate: streakUpdate.lastCompletedDate,
         updatedAt: now,
       })
       .where(and(eq(activities.id, activityId), eq(activities.userId, userId)))

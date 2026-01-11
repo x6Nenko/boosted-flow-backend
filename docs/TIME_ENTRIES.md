@@ -18,7 +18,7 @@ src/
 │       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
-    └── relations.ts                # User ↔ TimeEntry relation (one-to-many)
+    └── relations.ts                # User ↔ TimeEntry, Activity ↔ TimeEntry relations
 ```
 
 ---
@@ -39,7 +39,8 @@ src/
 3. If not found → `NotFoundException` (404)
 4. If already stopped → `ConflictException` (409)
 5. Updates `stoppedAt` to current timestamp
-6. Response: Updated `TimeEntry` object
+6. Calculates duration and calls `ActivitiesService.updateProgress()` to update tracked duration + streaks
+7. Response: Updated `TimeEntry` object
 
 ### Get All Entries
 1. `GET /time-entries?from=&to=` → `GetTimeEntriesQueryDto` validates ISO8601 dates
@@ -66,6 +67,7 @@ src/
 | **Null-Safe Response** | `findCurrent` wraps result in `{ entry }` object |
 | **Dynamic Query Building** | `findAll` uses conditional `and()` with optional date filters |
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes entries |
+| **Side-Effect Progress Update** | `stop()` calls `ActivitiesService.updateProgress()` |
 
 ---
 
@@ -128,6 +130,7 @@ type TimeEntry = typeof timeEntries.$inferSelect
 8. **No pagination**: `findAll` returns all matching entries—add pagination for production scale
 9. **Description limit**: 500 chars max enforced at DTO level, not database level
 10. **Cascade behavior**: Deleting a user removes all their time entries automatically
+11. **Progress side effect**: Stopping a time entry updates the linked activity's tracked duration + streaks
 
 ---
 

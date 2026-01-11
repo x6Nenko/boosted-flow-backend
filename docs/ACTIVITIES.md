@@ -11,7 +11,7 @@ src/
 ├── activities/
 │   ├── activities.module.ts      # Feature module, exports ActivitiesService
 │   ├── activities.controller.ts  # HTTP endpoints (CRUD, archive/unarchive)
-│   ├── activities.service.ts     # Business logic, progress tracking, streak calculation
+│   ├── activities.service.ts     # Business logic, progress tracking, streak calculation (encapsulated helper)
 │   └── dto/
 │       ├── create-activity.dto.ts    # Validation: name (max 255 chars)
 │       ├── update-activity.dto.ts    # Validation: optional name
@@ -91,6 +91,7 @@ src/
 | **Activity-Required Time Entries** | TimeEntriesService validates `activityId` before insert |
 | **Side-Effect Progress Update** | TimeEntriesService calls `updateProgress()` on stop—not exposed to client directly |
 | **Streak Gamification** | Daily completion tracked—consecutive days increment streak |
+| **Encapsulated Streak Logic** | Streak updates are handled by a private helper inside ActivitiesService |
 | **Dynamic Query Building** | `findAll` uses conditional `isNull(archivedAt)` filter |
 
 ---

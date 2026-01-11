@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
-import { timeEntries } from '../src/database/schema';
+import { activities, timeEntries } from '../src/database/schema';
 
 // Load test env vars before anything else
 process.env.NODE_ENV = 'test'; // turns rate limiting off
@@ -383,6 +383,118 @@ describe('Activities (e2e)', () => {
         .expect(200);
 
       expect(updatedActivityResponse.body.trackedDuration).toBeGreaterThanOrEqual(10);
+
+      // Streak should be updated once for today
+      const today = new Date().toISOString().split('T')[0];
+      expect(updatedActivityResponse.body.lastCompletedDate).toBe(today);
+      expect(updatedActivityResponse.body.currentStreak).toBe(1);
+      expect(updatedActivityResponse.body.longestStreak).toBe(1);
+    });
+
+    it('should increment streak when last completion was yesterday', async () => {
+      const activityResponse = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Streak Activity' })
+        .expect(201);
+
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      await testDbService.db
+        .update(activities)
+        .set({
+          lastCompletedDate: yesterdayStr,
+          currentStreak: 3,
+          longestStreak: 5,
+        })
+        .where(eq(activities.id, activityResponse.body.id));
+
+      const entryResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          description: 'Working',
+          activityId: activityResponse.body.id,
+        })
+        .expect(201);
+
+      const startedAt = new Date(Date.now() - 11_000).toISOString();
+      await testDbService.db
+        .update(timeEntries)
+        .set({ startedAt })
+        .where(eq(timeEntries.id, entryResponse.body.id));
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: entryResponse.body.id })
+        .expect(201);
+
+      const updatedActivityResponse = await request(app.getHttpServer())
+        .get(`/activities/${activityResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(updatedActivityResponse.body.lastCompletedDate).toBe(today);
+      expect(updatedActivityResponse.body.currentStreak).toBe(4);
+      expect(updatedActivityResponse.body.longestStreak).toBe(5);
+    });
+
+    it('should reset streak to 1 when last completion was not yesterday', async () => {
+      const activityResponse = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Reset Streak Activity' })
+        .expect(201);
+
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const twoDaysAgo = new Date(now);
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+
+      await testDbService.db
+        .update(activities)
+        .set({
+          lastCompletedDate: twoDaysAgoStr,
+          currentStreak: 3,
+          longestStreak: 3,
+        })
+        .where(eq(activities.id, activityResponse.body.id));
+
+      const entryResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          description: 'Working',
+          activityId: activityResponse.body.id,
+        })
+        .expect(201);
+
+      const startedAt = new Date(Date.now() - 11_000).toISOString();
+      await testDbService.db
+        .update(timeEntries)
+        .set({ startedAt })
+        .where(eq(timeEntries.id, entryResponse.body.id));
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: entryResponse.body.id })
+        .expect(201);
+
+      const updatedActivityResponse = await request(app.getHttpServer())
+        .get(`/activities/${activityResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(updatedActivityResponse.body.lastCompletedDate).toBe(today);
+      expect(updatedActivityResponse.body.currentStreak).toBe(1);
+      expect(updatedActivityResponse.body.longestStreak).toBe(3);
     });
   });
 });
