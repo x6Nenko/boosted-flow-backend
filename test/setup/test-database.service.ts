@@ -60,6 +60,8 @@ export class TestDatabaseService {
         description TEXT,
         started_at TEXT NOT NULL,
         stopped_at TEXT,
+        rating INTEGER,
+        comment TEXT,
         created_at TEXT NOT NULL
       );
 

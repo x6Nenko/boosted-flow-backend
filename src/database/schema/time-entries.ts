@@ -1,4 +1,4 @@
-import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, integer } from 'drizzle-orm/sqlite-core';
 import { users } from './users';
 import { activities } from './activities';
 
@@ -15,6 +15,8 @@ export const timeEntries = sqliteTable(
     description: text('description'),
     startedAt: text('started_at').notNull(),
     stoppedAt: text('stopped_at'),
+    rating: integer('rating'),
+    comment: text('comment'),
     createdAt: text('created_at').notNull(),
   },
   (table) => [

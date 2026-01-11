@@ -1,7 +1,7 @@
 # Time Entries Feature
 
 ## High-Level Purpose
-Manual time tracking with start/stop functionality, optional descriptions, and date-range filtering for authenticated users.
+Manual time tracking with start/stop functionality, session rating and comments, optional descriptions, and date-range filtering for authenticated users.
 
 ---
 
@@ -10,11 +10,12 @@ Manual time tracking with start/stop functionality, optional descriptions, and d
 src/
 ├── time-entries/
 │   ├── time-entries.module.ts      # Feature module, imports DatabaseModule + ActivitiesModule
-│   ├── time-entries.controller.ts  # HTTP endpoints (start, stop, findAll, findCurrent)
+│   ├── time-entries.controller.ts  # HTTP endpoints (start, stop, update, findAll, findCurrent)
 │   ├── time-entries.service.ts     # Business logic, CRUD operations
 │   └── dto/
 │       ├── start-time-entry.dto.ts      # Validation: optional description (max 500 chars)
-│       ├── stop-time-entry.dto.ts       # Validation: UUID id
+│       ├── stop-time-entry.dto.ts       # Validation: UUID id, optional rating (1-5), optional comment (max 1000 chars)
+│       ├── update-time-entry.dto.ts     # Validation: optional rating (1-5), optional comment (max 1000 chars)
 │       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
@@ -35,14 +36,23 @@ src/
 6. Response: Full `TimeEntry` object
 
 ### Stop Timer
-1. `POST /time-entries/stop` → `StopTimeEntryDto` validates UUID `id`
+1. `POST /time-entries/stop` → `StopTimeEntryDto` validates UUID `id`, optional rating (1-5), optional comment (max 1000 chars)
 2. `TimeEntriesService.stop()` → finds entry by ID + userId (ownership check)
 3. If not found → `NotFoundException` (404)
 4. If already stopped → `ConflictException` (409)
-5. Updates `stoppedAt` to current timestamp
+5. Updates `stoppedAt` to current timestamp, sets `rating` and `comment` if provided
 6. Calculates duration and calls `ActivitiesService.updateProgress()` to update tracked duration + streaks
 7. Increments daily heatmap counter (`daily_time_entry_counts`) for `userId` + `YYYY-MM-DD`
 8. Response: Updated `TimeEntry` object
+
+### Update Time Entry
+1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional rating (1-5), optional comment (max 1000 chars)
+2. `TimeEntriesService.update()` → finds entry by ID + userId (ownership check)
+3. If not found → `NotFoundException` (404)
+4. If entry is still active (not stopped) → `ConflictException` (409)
+5. If more than 1 week since `stoppedAt` → `ForbiddenException` (403)
+6. Updates `rating` and/or `comment` fields
+7. Response: Updated `TimeEntry` object
 
 ### Get All Entries
 1. `GET /time-entries?from=&to=` → `GetTimeEntriesQueryDto` validates ISO8601 dates
@@ -77,6 +87,7 @@ src/
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes entries |
 | **Side-Effect Progress Update** | `stop()` calls `ActivitiesService.updateProgress()` |
 | **Pre-Aggregated Heatmap** | `stop()` increments `daily_time_entry_counts` for fast heatmap reads |
+| **1-Week Edit Window** | Rating/comment editable only within 1 week of stopping |
 
 ---
 
@@ -86,6 +97,7 @@ src/
 ```typescript
 @Post('start')   start(@CurrentUser() user, @Body() dto: StartTimeEntryDto): Promise<TimeEntry>
 @Post('stop')    stop(@CurrentUser() user, @Body() dto: StopTimeEntryDto): Promise<TimeEntry>
+@Patch(':id')    update(@CurrentUser() user, @Param('id') id, @Body() dto: UpdateTimeEntryDto): Promise<TimeEntry>
 @Get()           findAll(@CurrentUser() user, @Query() query: GetTimeEntriesQueryDto): Promise<TimeEntry[]>
 @Get('current')  findCurrent(@CurrentUser() user): Promise<{ entry: TimeEntry | null }>
 @Get('heatmap')  getHeatmap(@CurrentUser() user, @Query() query: GetHeatmapQueryDto): Promise<Array<{ date: string; count: number }>>
@@ -94,7 +106,8 @@ src/
 ### TimeEntriesService
 ```typescript
 start(userId: string, activityId: string, description?: string): Promise<TimeEntry>
-stop(userId: string, id: string): Promise<TimeEntry>
+stop(userId: string, id: string, rating?: number, comment?: string): Promise<TimeEntry>
+update(userId: string, id: string, data: { rating?: number; comment?: string }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntry | null>
 findAll(userId: string, from?: string, to?: string): Promise<TimeEntry[]>
 getHeatmap(userId: string, from?: string, to?: string): Promise<Array<{ date: string; count: number }>>
@@ -103,7 +116,7 @@ getHeatmap(userId: string, from?: string, to?: string): Promise<Array<{ date: st
 ### TimeEntry Type
 ```typescript
 type TimeEntry = typeof timeEntries.$inferSelect
-// { id, userId, activityId, description, startedAt, stoppedAt, createdAt }
+// { id, userId, activityId, description, startedAt, stoppedAt, rating, comment, createdAt }
 ```
 
 ---
@@ -119,6 +132,8 @@ type TimeEntry = typeof timeEntries.$inferSelect
 | description | TEXT | Nullable, max 500 chars (DTO enforced) |
 | startedAt | TEXT | ISO string, NOT NULL |
 | stoppedAt | TEXT | ISO string, NULL = active |
+| rating | INTEGER | Nullable, 1-5 (DTO enforced) |
+| comment | TEXT | Nullable, max 1000 chars (DTO enforced) |
 | createdAt | TEXT | ISO string |
 
 ### `daily_time_entry_counts`
@@ -150,11 +165,15 @@ type TimeEntry = typeof timeEntries.$inferSelect
 7. **Null wrapping**: `findCurrent` returns `{ entry }` object, not raw entry—ensures proper `null` serialization
 8. **No pagination**: `findAll` returns all matching entries—add pagination for production scale
 9. **Description limit**: 500 chars max enforced at DTO level, not database level
-10. **Cascade behavior**: Deleting a user removes all their time entries automatically
-11. **Progress side effect**: Stopping a time entry updates the linked activity's tracked duration + streaks
-12. **Heatmap updates happen on stop**: Starting a timer does not affect `daily_time_entry_counts`
-13. **Heatmap is derived data**: It should never be edited directly via API—only updated by `stop()`
-14. **Missing days are not returned**: Heatmap endpoint returns only days that have at least one stopped entry
+10. **Rating range**: 1-5 enforced at DTO level, not database level
+11. **Comment limit**: 1000 chars max enforced at DTO level, not database level
+12. **1-week edit window**: Rating/comment editable only within 1 week of `stoppedAt`
+13. **Edit requires stopped entry**: Cannot update rating/comment on active entries
+14. **Cascade behavior**: Deleting a user removes all their time entries automatically
+15. **Progress side effect**: Stopping a time entry updates the linked activity's tracked duration + streaks
+16. **Heatmap updates happen on stop**: Starting a timer does not affect `daily_time_entry_counts`
+17. **Heatmap is derived data**: It should never be edited directly via API—only updated by `stop()`
+18. **Missing days are not returned**: Heatmap endpoint returns only days that have at least one stopped entry
 
 ---
 

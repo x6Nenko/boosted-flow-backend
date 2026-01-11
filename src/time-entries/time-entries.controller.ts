@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -6,6 +14,7 @@ import { GetHeatmapQueryDto } from './dto/get-heatmap-query.dto';
 import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto';
 import { StartTimeEntryDto } from './dto/start-time-entry.dto';
 import { StopTimeEntryDto } from './dto/stop-time-entry.dto';
+import { UpdateTimeEntryDto } from './dto/update-time-entry.dto';
 import { TimeEntriesService } from './time-entries.service';
 
 @ApiTags('time-entries')
@@ -30,6 +39,16 @@ export class TimeEntriesController {
     @Body() dto: StopTimeEntryDto,
   ) {
     return this.timeEntriesService.stop(user.userId, dto.id);
+  }
+
+  @Patch(':id')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async update(
+    @CurrentUser() user: { userId: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateTimeEntryDto,
+  ) {
+    return this.timeEntriesService.update(user.userId, id, dto);
   }
 
   @Get()

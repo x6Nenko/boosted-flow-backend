@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
-import { dailyTimeEntryCounts } from '../src/database/schema';
+import { dailyTimeEntryCounts, timeEntries } from '../src/database/schema';
 
 // Load test env vars before anything else
 process.env.NODE_ENV = 'test'; // turns rate limiting offf
@@ -152,9 +152,28 @@ describe('Time Entries (e2e)', () => {
 
       expect(stopResponse.body.id).toBe(entryId);
       expect(stopResponse.body.stoppedAt).not.toBeNull();
+      expect(stopResponse.body.rating).toBeNull();
+      expect(stopResponse.body.comment).toBeNull();
       expect(new Date(stopResponse.body.stoppedAt).getTime()).toBeGreaterThan(
         new Date(stopResponse.body.startedAt).getTime(),
       );
+    });
+
+    it('should stop with null rating and comment', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      const stopResponse = await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      expect(stopResponse.body.rating).toBeNull();
+      expect(stopResponse.body.comment).toBeNull();
     });
 
     it('should increment daily heatmap count when stopping entries', async () => {
@@ -262,6 +281,181 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/stop')
         .send({ id: '00000000-0000-0000-0000-000000000000' })
+        .expect(401);
+    });
+  });
+
+  describe('PATCH /time-entries/:id', () => {
+    it('should update rating and comment after stopping', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 4, comment: 'Great session!' })
+        .expect(200);
+
+      expect(updateResponse.body.rating).toBe(4);
+      expect(updateResponse.body.comment).toBe('Great session!');
+    });
+
+    it('should update rating and comment within 1 week', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 5, comment: 'Updated comment' })
+        .expect(200);
+
+      expect(updateResponse.body.rating).toBe(5);
+      expect(updateResponse.body.comment).toBe('Updated comment');
+    });
+
+    it('should update only rating', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ comment: 'Original comment' })
+        .expect(200);
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 3 })
+        .expect(200);
+
+      expect(updateResponse.body.rating).toBe(3);
+      expect(updateResponse.body.comment).toBe('Original comment');
+    });
+
+    it('should return 404 for non-existent entry', async () => {
+      await request(app.getHttpServer())
+        .patch('/time-entries/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 5 })
+        .expect(404);
+    });
+
+    it('should return 409 when trying to update an active entry', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 5 })
+        .expect(409);
+    });
+
+    it('should return 403 when editing after 1 week', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Manually set stoppedAt to 8 days ago
+      const eightDaysAgo = new Date(
+        Date.now() - 8 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      await testDbService.db
+        .update(timeEntries)
+        .set({ stoppedAt: eightDaysAgo })
+        .where(eq(timeEntries.id, startResponse.body.id));
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 5 })
+        .expect(403);
+    });
+
+    it('should return 400 for invalid rating', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 0 })
+        .expect(400);
+    });
+
+    it('should return 400 for comment exceeding 1000 characters', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ comment: 'a'.repeat(1001) })
+        .expect(400);
+    });
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .patch('/time-entries/00000000-0000-0000-0000-000000000000')
+        .send({ rating: 5 })
         .expect(401);
     });
   });

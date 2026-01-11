@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,8 @@ import { ActivitiesService } from '../activities/activities.service';
 import { dailyTimeEntryCounts, timeEntries } from '../database/schema';
 
 type TimeEntry = typeof timeEntries.$inferSelect;
+
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class TimeEntriesService {
@@ -114,6 +117,41 @@ export class TimeEntriesService {
           updatedAt: stoppedAt,
         },
       });
+
+    return updated;
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    data: { rating?: number; comment?: string },
+  ): Promise<TimeEntry> {
+    const entry = await this.databaseService.db.query.timeEntries.findFirst({
+      where: and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)),
+    });
+
+    if (!entry) {
+      throw new NotFoundException('Time entry not found');
+    }
+
+    if (!entry.stoppedAt) {
+      throw new ConflictException('Cannot update an active time entry');
+    }
+
+    const stoppedTime = new Date(entry.stoppedAt).getTime();
+    const now = Date.now();
+    if (now - stoppedTime > ONE_WEEK_MS) {
+      throw new ForbiddenException('Cannot edit time entry after 1 week');
+    }
+
+    const [updated] = await this.databaseService.db
+      .update(timeEntries)
+      .set({
+        rating: data.rating !== undefined ? data.rating : entry.rating,
+        comment: data.comment !== undefined ? data.comment : entry.comment,
+      })
+      .where(eq(timeEntries.id, id))
+      .returning();
 
     return updated;
   }
