@@ -6,21 +6,37 @@ import {
 import { and, eq, gte, isNull, lte } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '../database/database.service';
+import { ActivitiesService } from '../activities/activities.service';
 import { timeEntries } from '../database/schema';
 
 type TimeEntry = typeof timeEntries.$inferSelect;
 
 @Injectable()
 export class TimeEntriesService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly activitiesService: ActivitiesService,
+  ) { }
 
-  async start(userId: string, description?: string): Promise<TimeEntry> {
+  async start(
+    userId: string,
+    activityId: string,
+    description?: string,
+  ): Promise<TimeEntry> {
     // Check for active entry
     const activeEntry = await this.findActive(userId);
     if (activeEntry) {
       throw new ConflictException(
         'You already have an active time entry. Please stop it before starting a new one.',
       );
+    }
+
+    const isOwner = await this.activitiesService.verifyOwnership(
+      userId,
+      activityId,
+    );
+    if (!isOwner) {
+      throw new NotFoundException('Activity not found');
     }
 
     // Create new entry
@@ -32,6 +48,7 @@ export class TimeEntriesService {
       .values({
         id,
         userId,
+        activityId,
         description: description || null,
         startedAt: now,
         stoppedAt: null,
@@ -57,11 +74,22 @@ export class TimeEntriesService {
     }
 
     // Stop the entry
+    const stoppedAt = new Date().toISOString();
     const [updated] = await this.databaseService.db
       .update(timeEntries)
-      .set({ stoppedAt: new Date().toISOString() })
+      .set({ stoppedAt })
       .where(eq(timeEntries.id, id))
       .returning();
+
+    const startTime = new Date(entry.startedAt).getTime();
+    const stopTime = new Date(stoppedAt).getTime();
+    const durationSeconds = Math.floor((stopTime - startTime) / 1000);
+
+    await this.activitiesService.updateProgress(
+      userId,
+      entry.activityId,
+      durationSeconds,
+    );
 
     return updated;
   }

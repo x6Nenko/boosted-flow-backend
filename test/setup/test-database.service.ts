@@ -33,21 +33,39 @@ export class TestDatabaseService {
 
       CREATE TABLE IF NOT EXISTS refresh_tokens (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         token_hash TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         revoked INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS activities (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        tracked_duration INTEGER NOT NULL DEFAULT 0,
+        current_streak INTEGER NOT NULL DEFAULT 0,
+        longest_streak INTEGER NOT NULL DEFAULT 0,
+        last_completed_date TEXT,
+        archived_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS time_entries (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
         description TEXT,
         started_at TEXT NOT NULL,
         stopped_at TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE INDEX IF NOT EXISTS idx_activities_user_archived ON activities(user_id, archived_at);
+      CREATE INDEX IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_time_entries_activity_date ON time_entries(activity_id, started_at);
     `);
   }
 
@@ -57,6 +75,7 @@ export class TestDatabaseService {
   async clearDatabase() {
     await this.client.executeMultiple(`
       DELETE FROM time_entries;
+      DELETE FROM activities;
       DELETE FROM refresh_tokens;
       DELETE FROM users;
     `);

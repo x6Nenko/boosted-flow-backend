@@ -9,9 +9,9 @@ export const timeEntries = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    activityId: text('activity_id').references(() => activities.id, {
-      onDelete: 'cascade',
-    }),
+    activityId: text('activity_id')
+      .notNull()
+      .references(() => activities.id, { onDelete: 'cascade' }),
     description: text('description'),
     startedAt: text('started_at').notNull(),
     stoppedAt: text('stopped_at'),

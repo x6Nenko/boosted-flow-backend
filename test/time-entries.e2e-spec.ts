@@ -15,6 +15,7 @@ describe('Time Entries (e2e)', () => {
   let app: INestApplication<App>;
   let testDbService: TestDatabaseService;
   let accessToken: string;
+  let activityId: string;
 
   // Helper to register and login
   const authenticateUser = async () => {
@@ -55,6 +56,14 @@ describe('Time Entries (e2e)', () => {
   beforeEach(async () => {
     await testDbService.clearDatabase();
     accessToken = await authenticateUser();
+
+    const activityResponse = await request(app.getHttpServer())
+      .post('/activities')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ name: 'Default Activity' })
+      .expect(201);
+
+    activityId = activityResponse.body.id;
   });
 
   describe('POST /time-entries/start', () => {
@@ -62,13 +71,14 @@ describe('Time Entries (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({})
+        .send({ activityId })
         .expect(201);
 
       expect(response.body).toHaveProperty('id');
       expect(response.body).toHaveProperty('userId');
       expect(response.body).toHaveProperty('startedAt');
       expect(response.body).toHaveProperty('createdAt');
+      expect(response.body.activityId).toBe(activityId);
       expect(response.body.description).toBeNull();
       expect(response.body.stoppedAt).toBeNull();
     });
@@ -79,7 +89,7 @@ describe('Time Entries (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description })
+        .send({ activityId, description })
         .expect(201);
 
       expect(response.body.description).toBe(description);
@@ -91,14 +101,14 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'First entry' })
+        .send({ activityId, description: 'First entry' })
         .expect(201);
 
       // Try to start second entry
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Second entry' })
+        .send({ activityId, description: 'Second entry' })
         .expect(409);
     });
 
@@ -108,7 +118,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: longDescription })
+        .send({ activityId, description: longDescription })
         .expect(400);
     });
 
@@ -126,7 +136,7 @@ describe('Time Entries (e2e)', () => {
       const startResponse = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Task to stop' })
+        .send({ activityId, description: 'Task to stop' })
         .expect(201);
 
       const entryId = startResponse.body.id;
@@ -157,7 +167,7 @@ describe('Time Entries (e2e)', () => {
       const startResponse = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Task' })
+        .send({ activityId, description: 'Task' })
         .expect(201);
 
       const entryId = startResponse.body.id;
@@ -207,7 +217,7 @@ describe('Time Entries (e2e)', () => {
       const entry1Response = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Entry 1' });
+        .send({ activityId, description: 'Entry 1' });
 
       await request(app.getHttpServer())
         .post('/time-entries/stop')
@@ -217,7 +227,7 @@ describe('Time Entries (e2e)', () => {
       const entry2Response = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Entry 2' });
+        .send({ activityId, description: 'Entry 2' });
 
       await request(app.getHttpServer())
         .post('/time-entries/stop')
@@ -227,7 +237,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Entry 3 (active)' });
+        .send({ activityId, description: 'Entry 3 (active)' });
 
       // Get all entries
       const response = await request(app.getHttpServer())
@@ -255,7 +265,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Today entry' });
+        .send({ activityId, description: 'Today entry' });
 
       // Filter from tomorrow (should return empty)
       const futureResponse = await request(app.getHttpServer())
@@ -288,7 +298,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Today entry' });
+        .send({ activityId, description: 'Today entry' });
 
       // Filter to yesterday (should return empty)
       const pastResponse = await request(app.getHttpServer())
@@ -321,7 +331,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Today entry' });
+        .send({ activityId, description: 'Today entry' });
 
       const response = await request(app.getHttpServer())
         .get('/time-entries')
@@ -357,7 +367,7 @@ describe('Time Entries (e2e)', () => {
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'User 1 entry' });
+        .send({ activityId, description: 'User 1 entry' });
 
       // Register and login as second user
       const user2 = {
@@ -395,7 +405,7 @@ describe('Time Entries (e2e)', () => {
       const startResponse = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Active task' })
+        .send({ activityId, description: 'Active task' })
         .expect(201);
 
       const response = await request(app.getHttpServer())
@@ -413,7 +423,7 @@ describe('Time Entries (e2e)', () => {
       const startResponse = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ description: 'Task' });
+        .send({ activityId, description: 'Task' });
 
       await request(app.getHttpServer())
         .post('/time-entries/stop')

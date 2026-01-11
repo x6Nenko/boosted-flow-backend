@@ -9,7 +9,6 @@ export const activities = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    targetDuration: integer('target_duration').notNull(), // seconds - total mastery goal
     trackedDuration: integer('tracked_duration').notNull().default(0), // seconds - total time tracked
     currentStreak: integer('current_streak').notNull().default(0),
     longestStreak: integer('longest_streak').notNull().default(0),

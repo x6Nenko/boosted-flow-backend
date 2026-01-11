@@ -9,7 +9,7 @@ Manual time tracking with start/stop functionality, optional descriptions, and d
 ```
 src/
 ├── time-entries/
-│   ├── time-entries.module.ts      # Feature module, imports DatabaseModule
+│   ├── time-entries.module.ts      # Feature module, imports DatabaseModule + ActivitiesModule
 │   ├── time-entries.controller.ts  # HTTP endpoints (start, stop, findAll, findCurrent)
 │   ├── time-entries.service.ts     # Business logic, CRUD operations
 │   └── dto/
@@ -26,8 +26,8 @@ src/
 ## Data Flow
 
 ### Start Timer
-1. `POST /time-entries/start` → `StartTimeEntryDto` validates optional description (max 500 chars)
-2. `@CurrentUser()` extracts `{ sub: userId }` from JWT payload
+1. `POST /time-entries/start` → `StartTimeEntryDto` validates required `activityId` and optional description (max 500 chars)
+2. `@CurrentUser()` extracts `{ userId: string }` from request
 3. `TimeEntriesService.start()` → checks for existing active entry via `findActive()`
 4. If active entry exists → `ConflictException` (409)
 5. Creates new entry with UUID, `startedAt` timestamp, `stoppedAt: null`
@@ -81,7 +81,7 @@ src/
 
 ### TimeEntriesService
 ```typescript
-start(userId: string, description?: string): Promise<TimeEntry>
+start(userId: string, activityId: string, description?: string): Promise<TimeEntry>
 stop(userId: string, id: string): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntry | null>
 findAll(userId: string, from?: string, to?: string): Promise<TimeEntry[]>
@@ -90,7 +90,7 @@ findAll(userId: string, from?: string, to?: string): Promise<TimeEntry[]>
 ### TimeEntry Type
 ```typescript
 type TimeEntry = typeof timeEntries.$inferSelect
-// { id, userId, description, startedAt, stoppedAt, createdAt }
+// { id, userId, activityId, description, startedAt, stoppedAt, createdAt }
 ```
 
 ---
@@ -102,7 +102,7 @@ type TimeEntry = typeof timeEntries.$inferSelect
 |--------|------|-------|
 | id | TEXT PK | UUID |
 | userId | TEXT FK | References `users.id`, cascade delete |
-| activityId | TEXT FK | References `activities.id`, nullable, cascade delete |
+| activityId | TEXT FK | References `activities.id`, NOT NULL, cascade delete |
 | description | TEXT | Nullable, max 500 chars (DTO enforced) |
 | startedAt | TEXT | ISO string, NOT NULL |
 | stoppedAt | TEXT | ISO string, NULL = active |
@@ -112,7 +112,7 @@ type TimeEntry = typeof timeEntries.$inferSelect
 - `users` → `timeEntries`: One-to-Many
 - `timeEntries` → `user`: Many-to-One
 - `activities` → `timeEntries`: One-to-Many
-- `timeEntries` → `activity`: Many-to-One (nullable)
+- `timeEntries` → `activity`: Many-to-One
 
 ---
 
@@ -120,7 +120,7 @@ type TimeEntry = typeof timeEntries.$inferSelect
 
 1. **Single active timer**: User can only have one entry with `stoppedAt = null` at a time
 2. **Ownership enforcement**: Service always includes `userId` in queries—never trust client-provided userId
-3. **User shape in controller**: `@CurrentUser()` returns `{ sub: string, email: string }`—use `user.sub` for userId
+3. **User shape in controller**: `@CurrentUser()` returns `{ userId: string }`—use `user.userId`
 4. **Entry typing**: Use `typeof timeEntries.$inferSelect` for `TimeEntry` type (Drizzle pattern)
 5. **Date format**: All timestamps stored as ISO 8601 strings in SQLite TEXT columns
 6. **Date filtering**: `from`/`to` filter on `startedAt`, not `stoppedAt`
