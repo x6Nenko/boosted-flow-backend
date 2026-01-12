@@ -29,7 +29,12 @@ export class TimeEntriesController {
     @CurrentUser() user: { userId: string },
     @Body() dto: StartTimeEntryDto,
   ) {
-    return this.timeEntriesService.start(user.userId, dto.activityId, dto.description);
+    return this.timeEntriesService.start(
+      user.userId,
+      dto.activityId,
+      dto.description,
+      dto.taskId,
+    );
   }
 
   @Post('stop')

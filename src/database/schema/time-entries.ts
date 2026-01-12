@@ -1,6 +1,7 @@
 import { sqliteTable, text, index, integer } from 'drizzle-orm/sqlite-core';
 import { users } from './users';
 import { activities } from './activities';
+import { tasks } from './tasks';
 
 export const timeEntries = sqliteTable(
   'time_entries',
@@ -12,6 +13,7 @@ export const timeEntries = sqliteTable(
     activityId: text('activity_id')
       .notNull()
       .references(() => activities.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     description: text('description'),
     startedAt: text('started_at').notNull(),
     stoppedAt: text('stopped_at'),

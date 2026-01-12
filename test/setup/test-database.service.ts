@@ -57,6 +57,7 @@ export class TestDatabaseService {
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
         description TEXT,
         started_at TEXT NOT NULL,
         stopped_at TEXT,
@@ -74,9 +75,35 @@ export class TestDatabaseService {
         PRIMARY KEY (user_id, date)
       );
 
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        archived_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS tags (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS time_entry_tags (
+        time_entry_id TEXT NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+        tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+        PRIMARY KEY (time_entry_id, tag_id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_user_archived ON activities(user_id, archived_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_activity_date ON time_entries(activity_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_tasks_activity_archived ON tasks(activity_id, archived_at);
+      CREATE INDEX IF NOT EXISTS idx_tags_user_name ON tags(user_id, name);
+      CREATE INDEX IF NOT EXISTS idx_time_entry_tags_tag ON time_entry_tags(tag_id);
     `);
   }
 
@@ -85,8 +112,11 @@ export class TestDatabaseService {
    */
   async clearDatabase() {
     await this.client.executeMultiple(`
+      DELETE FROM time_entry_tags;
       DELETE FROM time_entries;
       DELETE FROM daily_time_entry_counts;
+      DELETE FROM tasks;
+      DELETE FROM tags;
       DELETE FROM activities;
       DELETE FROM refresh_tokens;
       DELETE FROM users;

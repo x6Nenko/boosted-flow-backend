@@ -749,4 +749,250 @@ describe('Time Entries (e2e)', () => {
         .expect(401);
     });
   });
+
+  describe('Tasks and Tags Integration', () => {
+    it('should start time entry with taskId', async () => {
+      // Create a task
+      const taskResponse = await request(app.getHttpServer())
+        .post(`/activities/${activityId}/tasks`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Complete chapter 1' })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, taskId: taskResponse.body.id })
+        .expect(201);
+
+      expect(response.body.taskId).toBe(taskResponse.body.id);
+    });
+
+    it('should return 404 for task from different activity', async () => {
+      // Create another activity
+      const activity2 = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Another activity' })
+        .expect(201);
+
+      // Create task in another activity
+      const taskResponse = await request(app.getHttpServer())
+        .post(`/activities/${activity2.body.id}/tasks`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Task in activity 2' })
+        .expect(201);
+
+      // Try to start time entry with mismatched task
+      await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, taskId: taskResponse.body.id })
+        .expect(404);
+    });
+
+    it('should update time entry with tags', async () => {
+      // Create and stop entry
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Create tags
+      const tagsResponse = await request(app.getHttpServer())
+        .post('/tags/get-or-create')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ names: ['urgent', 'review'] })
+        .expect(201);
+
+      const tagIds = tagsResponse.body.map((t: { id: string }) => t.id);
+
+      // Update entry with tags
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds })
+        .expect(200);
+
+      // Verify tags are included in response
+      const entriesResponse = await request(app.getHttpServer())
+        .get('/time-entries')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(entriesResponse.body[0].tags).toHaveLength(2);
+    });
+
+    it('should include task and tags in findAll response', async () => {
+      // Create task
+      const taskResponse = await request(app.getHttpServer())
+        .post(`/activities/${activityId}/tasks`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'My task' })
+        .expect(201);
+
+      // Start and stop entry with task
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, taskId: taskResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Create and attach tags
+      const tagsResponse = await request(app.getHttpServer())
+        .post('/tags/get-or-create')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ names: ['focus'] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds: [tagsResponse.body[0].id] })
+        .expect(200);
+
+      // Verify findAll includes task and tags
+      const response = await request(app.getHttpServer())
+        .get('/time-entries')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body[0].task).not.toBeNull();
+      expect(response.body[0].task.name).toBe('My task');
+      expect(response.body[0].tags).toHaveLength(1);
+      expect(response.body[0].tags[0].name).toBe('focus');
+    });
+
+    it('should include task in current entry response', async () => {
+      // Create task
+      const taskResponse = await request(app.getHttpServer())
+        .post(`/activities/${activityId}/tasks`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Current task' })
+        .expect(201);
+
+      // Start entry with task
+      await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, taskId: taskResponse.body.id })
+        .expect(201);
+
+      // Verify current includes task
+      const response = await request(app.getHttpServer())
+        .get('/time-entries/current')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body.entry.task).not.toBeNull();
+      expect(response.body.entry.task.name).toBe('Current task');
+      expect(response.body.entry.tags).toEqual([]);
+    });
+
+    it('should replace tags when updating with new tagIds', async () => {
+      // Create and stop entry
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Create first tag and attach
+      const tag1 = await request(app.getHttpServer())
+        .post('/tags/get-or-create')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ names: ['first'] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds: [tag1.body[0].id] })
+        .expect(200);
+
+      // Create second tag and replace
+      const tag2 = await request(app.getHttpServer())
+        .post('/tags/get-or-create')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ names: ['second'] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds: [tag2.body[0].id] })
+        .expect(200);
+
+      // Verify only second tag remains
+      const response = await request(app.getHttpServer())
+        .get('/time-entries')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body[0].tags).toHaveLength(1);
+      expect(response.body[0].tags[0].name).toBe('second');
+    });
+
+    it('should clear tags when updating with empty tagIds array', async () => {
+      // Create and stop entry
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Attach tag
+      const tagResponse = await request(app.getHttpServer())
+        .post('/tags/get-or-create')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ names: ['to-remove'] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds: [tagResponse.body[0].id] })
+        .expect(200);
+
+      // Clear tags
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ tagIds: [] })
+        .expect(200);
+
+      // Verify no tags
+      const response = await request(app.getHttpServer())
+        .get('/time-entries')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(response.body[0].tags).toHaveLength(0);
+    });
+  });
 });

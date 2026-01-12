@@ -1,7 +1,10 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -21,4 +24,14 @@ export class UpdateTimeEntryDto {
   @IsString({ message: 'Comment must be a string' })
   @MaxLength(1000, { message: 'Comment cannot exceed 1000 characters' })
   comment?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tag IDs to attach to this entry (max 3)',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Tag IDs must be an array' })
+  @ArrayMaxSize(3, { message: 'Cannot have more than 3 tags' })
+  @IsUUID('all', { each: true, message: 'Each tag ID must be a valid UUID' })
+  tagIds?: string[];
 }

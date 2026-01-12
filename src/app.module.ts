@@ -13,6 +13,8 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TasksModule } from './tasks/tasks.module';
 import { TimeEntriesModule } from './time-entries/time-entries.module';
 import { ActivitiesModule } from './activities/activities.module';
+import { ActivityTasksModule } from './activity-tasks/activity-tasks.module';
+import { TagsModule } from './tags/tags.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { ActivitiesModule } from './activities/activities.module';
     TasksModule,
     TimeEntriesModule,
     ActivitiesModule,
+    ActivityTasksModule,
+    TagsModule,
   ],
   controllers: [AppController],
   providers: [

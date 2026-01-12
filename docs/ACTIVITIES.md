@@ -147,6 +147,7 @@ type Activity = typeof activities.$inferSelect
 ### Relations
 - `users` → `activities`: One-to-Many
 - `activities` → `user`: Many-to-One
+- `activities` → `tasks`: One-to-Many (cascade delete)
 - `activities` → `timeEntries`: One-to-Many (cascade delete)
 - `timeEntries` → `activity`: Many-to-One (required)
 

@@ -71,6 +71,13 @@
       "when": 1768161096367,
       "tag": "0009_open_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1768250902084,
+      "tag": "0010_workable_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }
