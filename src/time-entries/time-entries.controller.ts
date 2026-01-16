@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -68,5 +71,15 @@ export class TimeEntriesController {
     const entry = await this.timeEntriesService.findActive(user.userId);
     // Wrap in object to ensure proper JSON serialization
     return { entry };
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async delete(
+    @CurrentUser() user: { userId: string },
+    @Param('id') id: string,
+  ) {
+    await this.timeEntriesService.delete(user.userId, id);
   }
 }

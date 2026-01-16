@@ -210,4 +210,18 @@ export class TimeEntriesService {
       tags: entry.timeEntryTags.map((tet) => tet.tag),
     }));
   }
+
+  async delete(userId: string, id: string): Promise<void> {
+    const entry = await this.databaseService.db.query.timeEntries.findFirst({
+      where: and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)),
+    });
+
+    if (!entry) {
+      throw new NotFoundException('Time entry not found');
+    }
+
+    await this.databaseService.db
+      .delete(timeEntries)
+      .where(and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)));
+  }
 }

@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -78,5 +81,15 @@ export class ActivitiesController {
     @Param('id') id: string,
   ) {
     return this.activitiesService.unarchive(user.userId, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async delete(
+    @CurrentUser() user: { userId: string },
+    @Param('id') id: string,
+  ) {
+    await this.activitiesService.delete(user.userId, id);
   }
 }

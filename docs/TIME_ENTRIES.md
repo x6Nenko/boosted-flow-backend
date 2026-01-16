@@ -67,6 +67,13 @@ src/
 3. Includes task and tags via relational query (single query with JOINs)
 4. Response: `{ entry: TimeEntryWithRelations | null }` (wrapped for JSON serialization)
 
+### Delete Time Entry
+1. `DELETE /time-entries/:id` → no body required
+2. `TimeEntriesService.delete()` → finds entry by ID + userId (ownership check)
+3. If not found → `NotFoundException` (404)
+4. Permanently deletes entry from database
+5. Response: 204 No Content
+
 ---
 
 ## Key Patterns
@@ -97,6 +104,7 @@ src/
 @Patch(':id')    update(@CurrentUser() user, @Param('id') id, @Body() dto: UpdateTimeEntryDto): Promise<TimeEntry>
 @Get()           findAll(@CurrentUser() user, @Query() query: GetTimeEntriesQueryDto): Promise<TimeEntry[]>
 @Get('current')  findCurrent(@CurrentUser() user): Promise<{ entry: TimeEntry | null }>
+@Delete(':id')   delete(@CurrentUser() user, @Param('id') id): Promise<void>
 ```
 
 ### TimeEntriesService
@@ -106,6 +114,7 @@ stop(userId: string, id: string): Promise<TimeEntry>
 update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[] }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntryWithRelations | null>
 findAll(userId: string, from?: string, to?: string): Promise<TimeEntryWithRelations[]>
+delete(userId: string, id: string): Promise<void>
 ```
 
 ### TimeEntry Type
@@ -170,6 +179,7 @@ type TimeEntryWithRelations = TimeEntry & {
 18. **Archived task exclusion**: Cannot start time entry with archived task
 19. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
 20. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
+21. **Hard delete**: `DELETE` endpoint permanently removes entry—no soft delete or recovery
 
 ---
 

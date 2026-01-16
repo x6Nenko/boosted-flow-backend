@@ -886,4 +886,91 @@ describe('Time Entries (e2e)', () => {
       expect(response.body[0].tags).toHaveLength(0);
     });
   });
+
+  describe('DELETE /time-entries/:id', () => {
+    it('should delete a time entry', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      // Verify it's gone
+      const entries = await testDbService.db.query.timeEntries.findMany({
+        where: and(
+          eq(timeEntries.id, startResponse.body.id),
+          eq(timeEntries.userId, startResponse.body.userId),
+        ),
+      });
+      expect(entries).toHaveLength(0);
+    });
+
+    it('should return 404 when deleting non-existent entry', async () => {
+      await request(app.getHttpServer())
+        .delete('/time-entries/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+
+    it('should delete an active time entry', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      // Verify no active entry
+      const currentResponse = await request(app.getHttpServer())
+        .get('/time-entries/current')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(currentResponse.body.entry).toBeNull();
+    });
+
+    it('should not allow deleting another user\'s entry', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      // Register second user
+      const user2 = {
+        email: 'user2-delete@example.com',
+        password: 'Password456!',
+      };
+      const user2Response = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send(user2)
+        .expect(201);
+
+      const user2Token = user2Response.body.accessToken;
+
+      // Second user should not be able to delete first user's entry
+      await request(app.getHttpServer())
+        .delete(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${user2Token}`)
+        .expect(404);
+
+      // Verify entry still exists for first user
+      const entries = await testDbService.db.query.timeEntries.findMany({
+        where: and(
+          eq(timeEntries.id, startResponse.body.id),
+          eq(timeEntries.userId, startResponse.body.userId),
+        ),
+      });
+      expect(entries).toHaveLength(1);
+    });
+  });
 });

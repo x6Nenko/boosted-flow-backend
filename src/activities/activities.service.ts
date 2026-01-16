@@ -128,4 +128,13 @@ export class ActivitiesService {
 
     return unarchived;
   }
+
+  async delete(userId: string, id: string): Promise<void> {
+    // Verify ownership first
+    await this.findById(userId, id);
+
+    await this.databaseService.db
+      .delete(activities)
+      .where(and(eq(activities.id, id), eq(activities.userId, userId)));
+  }
 }

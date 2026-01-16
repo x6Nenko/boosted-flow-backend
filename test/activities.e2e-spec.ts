@@ -347,4 +347,93 @@ describe('Activities (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('DELETE /activities/:id', () => {
+    it('should delete an activity', async () => {
+      const createResponse = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'To Delete' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/activities/${createResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      // Verify it's gone
+      await request(app.getHttpServer())
+        .get(`/activities/${createResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+
+    it('should return 404 when deleting non-existent activity', async () => {
+      await request(app.getHttpServer())
+        .delete('/activities/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+
+    it('should cascade delete time entries when activity is deleted', async () => {
+      // Create activity
+      const activityResponse = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Activity' })
+        .expect(201);
+
+      // Create time entry linked to activity
+      const entryResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId: activityResponse.body.id })
+        .expect(201);
+
+      // Delete activity
+      await request(app.getHttpServer())
+        .delete(`/activities/${activityResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      // Verify time entry is also deleted
+      const entries = await testDbService.db.query.timeEntries.findMany({
+        where: eq(timeEntries.id, entryResponse.body.id),
+      });
+      expect(entries).toHaveLength(0);
+    });
+
+    it('should not allow deleting another user\'s activity', async () => {
+      // Create activity for first user
+      const createResponse = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'User 1 Activity' })
+        .expect(201);
+
+      // Register second user
+      const user2 = {
+        email: 'user2-delete@example.com',
+        password: 'Password456!',
+      };
+      const user2Response = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send(user2)
+        .expect(201);
+
+      const user2Token = user2Response.body.accessToken;
+
+      // Second user should not be able to delete first user's activity
+      await request(app.getHttpServer())
+        .delete(`/activities/${createResponse.body.id}`)
+        .set('Authorization', `Bearer ${user2Token}`)
+        .expect(404);
+
+      // Verify activity still exists for first user
+      await request(app.getHttpServer())
+        .get(`/activities/${createResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+    });
+  });
 });

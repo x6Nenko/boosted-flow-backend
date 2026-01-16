@@ -58,6 +58,14 @@ src/
 3. Sets `archivedAt` to `null`
 4. Response: Updated `Activity` with `archivedAt: null`
 
+### Delete Activity
+1. `DELETE /activities/:id` → no body required
+2. `ActivitiesService.delete()` → verifies ownership via `findById()`
+3. If not found → `NotFoundException` (404)
+4. Permanently deletes activity from database
+5. Cascades to time entries (they are also deleted)
+6. Response: 204 No Content
+
 ---
 
 ## Key Patterns
@@ -85,6 +93,7 @@ src/
 @Patch(':id')          update(@CurrentUser() user, @Param('id') id, @Body() dto: UpdateActivityDto): Promise<Activity>
 @Post(':id/archive')   archive(@CurrentUser() user, @Param('id') id: string): Promise<Activity>
 @Post(':id/unarchive') unarchive(@CurrentUser() user, @Param('id') id: string): Promise<Activity>
+@Delete(':id')         delete(@CurrentUser() user, @Param('id') id: string): Promise<void>
 ```
 
 ### ActivitiesService
@@ -95,6 +104,7 @@ findById(userId: string, id: string): Promise<Activity>  // Throws NotFoundExcep
 update(userId: string, id: string, data: { name?: string }): Promise<Activity>
 archive(userId: string, id: string): Promise<Activity>  // Throws ConflictException if already archived
 unarchive(userId: string, id: string): Promise<Activity>  // Throws ConflictException if not archived
+delete(userId: string, id: string): Promise<void>  // Throws NotFoundException if not found
 ```
 
 ### Activity Type
@@ -140,6 +150,7 @@ type Activity = typeof activities.$inferSelect
 10. **Cascade behavior**: Deleting activity cascades to time entries (exceptional case—archive is normal flow)
 11. **Index usage**: Multi-column `idx_activities_user_archived` for "active activities" query
 12. **DTO validation**: `@MaxLength(255)` on name—enforced at DTO level, not database constraint
+13. **Hard delete**: `DELETE` endpoint permanently removes activity and cascades to time entries—no recovery
 
 ---
 
