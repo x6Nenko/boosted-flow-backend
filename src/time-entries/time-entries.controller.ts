@@ -10,7 +10,6 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { GetHeatmapQueryDto } from './dto/get-heatmap-query.dto';
 import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto';
 import { StartTimeEntryDto } from './dto/start-time-entry.dto';
 import { StopTimeEntryDto } from './dto/stop-time-entry.dto';
@@ -69,13 +68,5 @@ export class TimeEntriesController {
     const entry = await this.timeEntriesService.findActive(user.userId);
     // Wrap in object to ensure proper JSON serialization
     return { entry };
-  }
-
-  @Get('heatmap')
-  async getHeatmap(
-    @CurrentUser() user: { userId: string },
-    @Query() query: GetHeatmapQueryDto,
-  ) {
-    return this.timeEntriesService.getHeatmap(user.userId, query.from, query.to);
   }
 }

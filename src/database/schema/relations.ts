@@ -4,7 +4,6 @@ import { activities } from './activities';
 import { tasks } from './tasks';
 import { tags, timeEntryTags } from './tags';
 import { timeEntries } from './time-entries';
-import { dailyTimeEntryCounts } from './daily-time-entry-counts';
 import { refreshTokens } from './refresh-tokens';
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -12,19 +11,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
   tags: many(tags),
   timeEntries: many(timeEntries),
-  dailyTimeEntryCounts: many(dailyTimeEntryCounts),
   refreshTokens: many(refreshTokens),
 }));
-
-export const dailyTimeEntryCountsRelations = relations(
-  dailyTimeEntryCounts,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [dailyTimeEntryCounts.userId],
-      references: [users.id],
-    }),
-  }),
-);
 
 export const activitiesRelations = relations(activities, ({ one, many }) => ({
   user: one(users, {

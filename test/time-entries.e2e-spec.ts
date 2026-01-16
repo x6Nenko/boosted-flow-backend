@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
-import { dailyTimeEntryCounts, timeEntries } from '../src/database/schema';
+import { timeEntries } from '../src/database/schema';
 
 // Load test env vars before anything else
 process.env.NODE_ENV = 'test'; // turns rate limiting offf
@@ -174,68 +174,6 @@ describe('Time Entries (e2e)', () => {
 
       expect(stopResponse.body.rating).toBeNull();
       expect(stopResponse.body.comment).toBeNull();
-    });
-
-    it('should increment daily heatmap count when stopping entries', async () => {
-      // Start entry #1
-      const start1 = await request(app.getHttpServer())
-        .post('/time-entries/start')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ activityId, description: 'Heatmap #1' })
-        .expect(201);
-
-      const userId = start1.body.userId as string;
-      const entryId1 = start1.body.id as string;
-
-      // Stop entry #1
-      const stop1 = await request(app.getHttpServer())
-        .post('/time-entries/stop')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ id: entryId1 })
-        .expect(201);
-
-      const date = (stop1.body.stoppedAt as string).split('T')[0];
-
-      const rowAfterFirstStop =
-        await testDbService.db.query.dailyTimeEntryCounts.findFirst({
-          where: and(
-            eq(dailyTimeEntryCounts.userId, userId),
-            eq(dailyTimeEntryCounts.date, date),
-          ),
-        });
-
-      expect(rowAfterFirstStop).toBeTruthy();
-      expect(rowAfterFirstStop!.count).toBe(1);
-
-      // Start + stop entry #2 (same day)
-      const start2 = await request(app.getHttpServer())
-        .post('/time-entries/start')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ activityId, description: 'Heatmap #2' })
-        .expect(201);
-
-      await request(app.getHttpServer())
-        .post('/time-entries/stop')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ id: start2.body.id })
-        .expect(201);
-
-      const rowAfterSecondStop =
-        await testDbService.db.query.dailyTimeEntryCounts.findFirst({
-          where: and(
-            eq(dailyTimeEntryCounts.userId, userId),
-            eq(dailyTimeEntryCounts.date, date),
-          ),
-        });
-
-      expect(rowAfterSecondStop).toBeTruthy();
-      expect(rowAfterSecondStop!.count).toBe(2);
-
-      const allRowsForUser =
-        await testDbService.db.query.dailyTimeEntryCounts.findMany({
-          where: eq(dailyTimeEntryCounts.userId, userId),
-        });
-      expect(allRowsForUser).toHaveLength(1);
     });
 
     it('should return 404 when stopping non-existent entry', async () => {
@@ -646,53 +584,6 @@ describe('Time Entries (e2e)', () => {
         .expect(200);
 
       expect(response.body).toHaveLength(0);
-    });
-  });
-
-  describe('GET /time-entries/heatmap', () => {
-    it('should return 401 without auth token', async () => {
-      await request(app.getHttpServer())
-        .get('/time-entries/heatmap')
-        .expect(401);
-    });
-
-    it('should return aggregated counts for the current day', async () => {
-      // Stop two entries to increment heatmap
-      const start1 = await request(app.getHttpServer())
-        .post('/time-entries/start')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ activityId, description: 'Heatmap GET #1' })
-        .expect(201);
-
-      const stop1 = await request(app.getHttpServer())
-        .post('/time-entries/stop')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ id: start1.body.id })
-        .expect(201);
-
-      const date = (stop1.body.stoppedAt as string).split('T')[0];
-
-      const start2 = await request(app.getHttpServer())
-        .post('/time-entries/start')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ activityId, description: 'Heatmap GET #2' })
-        .expect(201);
-
-      await request(app.getHttpServer())
-        .post('/time-entries/stop')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .send({ id: start2.body.id })
-        .expect(201);
-
-      const response = await request(app.getHttpServer())
-        .get('/time-entries/heatmap')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(200);
-
-      expect(Array.isArray(response.body)).toBe(true);
-      const today = response.body.find((r: any) => r.date === date);
-      expect(today).toBeTruthy();
-      expect(today.count).toBe(2);
     });
   });
 

@@ -19,7 +19,6 @@ src/
 │       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
-    ├── daily-time-entry-counts.ts   # Pre-aggregated daily entry counts (heatmap)
     └── relations.ts                # User ↔ TimeEntry, Activity ↔ TimeEntry, Task ↔ TimeEntry, Tags ↔ TimeEntry
 ```
 
@@ -32,7 +31,7 @@ src/
 2. `@CurrentUser()` extracts `{ userId: string }` from request
 3. `TimeEntriesService.start()` → checks for existing active entry via `findActive()`
 4. If active entry exists → `ConflictException` (409)
-5. Verifies activity ownership via `ActivitiesService.verifyOwnership()`
+5. Verifies activity ownership via `ActivitiesService.findById()` (throws NotFoundException if not found or archived)
 6. If `taskId` provided, verifies task ownership and activity match via `ActivityTasksService.verifyOwnership()`
 7. Creates new entry with UUID, `startedAt` timestamp, `stoppedAt: null`
 8. Response: Full `TimeEntry` object
@@ -42,10 +41,8 @@ src/
 2. `TimeEntriesService.stop()` → finds entry by ID + userId (ownership check)
 3. If not found → `NotFoundException` (404)
 4. If already stopped → `ConflictException` (409)
-5. Updates `stoppedAt` to current timestamp, sets `rating` and `comment` if provided
-6. Calculates duration and calls `ActivitiesService.updateProgress()` to update tracked duration + streaks
-7. Increments daily heatmap counter (`daily_time_entry_counts`) for `userId` + `YYYY-MM-DD`
-8. Response: Updated `TimeEntry` object
+5. Updates `stoppedAt` to current timestamp
+6. Response: Updated `TimeEntry` object
 
 ### Update Time Entry
 1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3)
@@ -70,12 +67,6 @@ src/
 3. Includes task and tags via relational query (single query with JOINs)
 4. Response: `{ entry: TimeEntryWithRelations | null }` (wrapped for JSON serialization)
 
-### Get Heatmap Data
-1. `GET /time-entries/heatmap?from=&to=` → optional ISO8601 from/to
-2. `TimeEntriesService.getHeatmap()` → reads from pre-aggregated `daily_time_entry_counts`
-3. Filters: `userId` (always), `date >= from` (optional), `date <= to` (optional)
-4. Response: Array of `{ date, count }` rows (days with no entries are omitted)
-
 ---
 
 ## Key Patterns
@@ -91,8 +82,6 @@ src/
 | **Dynamic Query Building** | `findAll` uses conditional `and()` with optional date filters |
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes entries |
 | **Task FK Set Null** | `onDelete: 'set null'` on `taskId` FK—task deletion nullifies reference |
-| **Side-Effect Progress Update** | `stop()` calls `ActivitiesService.updateProgress()` |
-| **Pre-Aggregated Heatmap** | `stop()` increments `daily_time_entry_counts` for fast heatmap reads |
 | **1-Week Edit Window** | Rating/comment/tags editable only within 1 week of stopping |
 | **Relational Queries** | `findAll` and `findActive` use Drizzle relational queries to include task and tags |
 | **Tag Replace Strategy** | `update` replaces all tags when `tagIds` provided |
@@ -108,7 +97,6 @@ src/
 @Patch(':id')    update(@CurrentUser() user, @Param('id') id, @Body() dto: UpdateTimeEntryDto): Promise<TimeEntry>
 @Get()           findAll(@CurrentUser() user, @Query() query: GetTimeEntriesQueryDto): Promise<TimeEntry[]>
 @Get('current')  findCurrent(@CurrentUser() user): Promise<{ entry: TimeEntry | null }>
-@Get('heatmap')  getHeatmap(@CurrentUser() user, @Query() query: GetHeatmapQueryDto): Promise<Array<{ date: string; count: number }>>
 ```
 
 ### TimeEntriesService
@@ -118,7 +106,6 @@ stop(userId: string, id: string): Promise<TimeEntry>
 update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[] }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntryWithRelations | null>
 findAll(userId: string, from?: string, to?: string): Promise<TimeEntryWithRelations[]>
-getHeatmap(userId: string, from?: string, to?: string): Promise<Array<{ date: string; count: number }>>
 ```
 
 ### TimeEntry Type
@@ -150,15 +137,6 @@ type TimeEntryWithRelations = TimeEntry & {
 | comment | TEXT | Nullable, max 1000 chars (DTO enforced) |
 | createdAt | TEXT | ISO string |
 
-### `daily_time_entry_counts`
-| Column | Type | Notes |
-|--------|------|-------|
-| userId | TEXT PK | Composite PK (`userId`, `date`), cascade delete |
-| date | TEXT PK | ISO date string (YYYY-MM-DD) |
-| count | INTEGER | NOT NULL, DEFAULT 0 |
-| createdAt | TEXT | ISO string |
-| updatedAt | TEXT | ISO string |
-
 ### Relations
 - `users` → `timeEntries`: One-to-Many
 - `timeEntries` → `user`: Many-to-One
@@ -167,7 +145,6 @@ type TimeEntryWithRelations = TimeEntry & {
 - `tasks` → `timeEntries`: One-to-Many
 - `timeEntries` → `task`: Many-to-One (nullable)
 - `timeEntries` ↔ `tags`: Many-to-Many (via `time_entry_tags`)
-- `users` → `dailyTimeEntryCounts`: One-to-Many
 
 ---
 
@@ -191,12 +168,8 @@ type TimeEntryWithRelations = TimeEntry & {
 16. **Task FK set null**: Deleting a task sets `taskId` to NULL on linked entries
 17. **Task-Activity validation**: Task must belong to same activity as time entry
 18. **Archived task exclusion**: Cannot start time entry with archived task
-19. **Progress side effect**: Stopping a time entry updates the linked activity's tracked duration + streaks
-20. **Heatmap updates happen on stop**: Starting a timer does not affect `daily_time_entry_counts`
-21. **Heatmap is derived data**: It should never be edited directly via API—only updated by `stop()`
-22. **Missing days are not returned**: Heatmap endpoint returns only days that have at least one stopped entry
-23. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
-24. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
+19. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
+20. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
 
 ---
 

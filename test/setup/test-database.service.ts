@@ -44,10 +44,6 @@ export class TestDatabaseService {
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
-        tracked_duration INTEGER NOT NULL DEFAULT 0,
-        current_streak INTEGER NOT NULL DEFAULT 0,
-        longest_streak INTEGER NOT NULL DEFAULT 0,
-        last_completed_date TEXT,
         archived_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -64,15 +60,6 @@ export class TestDatabaseService {
         rating INTEGER,
         comment TEXT,
         created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS daily_time_entry_counts (
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        date TEXT NOT NULL,
-        count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (user_id, date)
       );
 
       CREATE TABLE IF NOT EXISTS tasks (
@@ -114,7 +101,6 @@ export class TestDatabaseService {
     await this.client.executeMultiple(`
       DELETE FROM time_entry_tags;
       DELETE FROM time_entries;
-      DELETE FROM daily_time_entry_counts;
       DELETE FROM tasks;
       DELETE FROM tags;
       DELETE FROM activities;

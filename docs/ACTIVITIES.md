@@ -1,7 +1,7 @@
 # Activities Feature
 
 ## High-Level Purpose
-Gamified activity tracking with soft-delete archiving, streak gamification, and required time-entry linkage for skill development.
+Activity tracking with soft-delete archiving and required time-entry linkage for skill development.
 
 ---
 
@@ -11,7 +11,7 @@ src/
 ├── activities/
 │   ├── activities.module.ts      # Feature module, exports ActivitiesService
 │   ├── activities.controller.ts  # HTTP endpoints (CRUD, archive/unarchive)
-│   ├── activities.service.ts     # Business logic, progress tracking, streak calculation (encapsulated helper)
+│   ├── activities.service.ts     # Business logic, CRUD operations
 │   └── dto/
 │       ├── create-activity.dto.ts    # Validation: name (max 255 chars)
 │       ├── update-activity.dto.ts    # Validation: optional name
@@ -29,7 +29,7 @@ src/
 ### Create Activity
 1. `POST /activities` → `CreateActivityDto` validates name (max 255 chars)
 2. `@CurrentUser()` extracts `{ userId: string }` from request
-3. `ActivitiesService.create()` → generates UUID, sets defaults (streaks=0, trackedDuration=0)
+3. `ActivitiesService.create()` → generates UUID
 4. Inserts into `activities` table with `archivedAt: null`
 5. Response: Full `Activity` object
 
@@ -58,24 +58,6 @@ src/
 3. Sets `archivedAt` to `null`
 4. Response: Updated `Activity` with `archivedAt: null`
 
-### Update Progress (Called by TimeEntriesService)
-1. Triggered when `POST /time-entries/stop` completes
-2. `TimeEntriesService.stop()` calculates duration → calls `ActivitiesService.updateProgress()`
-3. Progress update logic:
-   - Increment `trackedDuration` by duration delta
-   - Check if new completion for today (lastCompletedDate !== today)
-   - If yesterday's date matches → increment `currentStreak`
-   - If gap in dates → reset `currentStreak` to 1
-   - Update `longestStreak` if `currentStreak` exceeds it
-   - Set `lastCompletedDate` to today
-4. Response: Updated `Activity` (not returned to client—internal side effect)
-
-### Verify Ownership (Called by TimeEntriesService)
-1. `POST /time-entries/start` → `TimeEntriesService.start()` calls `ActivitiesService.verifyOwnership()`
-2. Checks activity exists, belongs to user, and is not archived
-3. If not owned → `NotFoundException` thrown in TimeEntriesService
-4. Response: Boolean (true if owner, false otherwise)
-
 ---
 
 ## Key Patterns
@@ -89,9 +71,6 @@ src/
 | **Soft Delete Only** | `archivedAt` timestamp—no hard delete exposed via API |
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes activities |
 | **Activity-Required Time Entries** | TimeEntriesService validates `activityId` before insert |
-| **Side-Effect Progress Update** | TimeEntriesService calls `updateProgress()` on stop—not exposed to client directly |
-| **Streak Gamification** | Daily completion tracked—consecutive days increment streak |
-| **Encapsulated Streak Logic** | Streak updates are handled by a private helper inside ActivitiesService |
 | **Dynamic Query Building** | `findAll` uses conditional `isNull(archivedAt)` filter |
 
 ---
@@ -116,14 +95,12 @@ findById(userId: string, id: string): Promise<Activity>  // Throws NotFoundExcep
 update(userId: string, id: string, data: { name?: string }): Promise<Activity>
 archive(userId: string, id: string): Promise<Activity>  // Throws ConflictException if already archived
 unarchive(userId: string, id: string): Promise<Activity>  // Throws ConflictException if not archived
-updateProgress(userId: string, activityId: string, durationDelta: number): Promise<Activity>  // Called by TimeEntriesService
-verifyOwnership(userId: string, activityId: string): Promise<boolean>  // Called by TimeEntriesService
 ```
 
 ### Activity Type
 ```typescript
 type Activity = typeof activities.$inferSelect
-// { id, userId, name, trackedDuration, currentStreak, longestStreak, lastCompletedDate, archivedAt, createdAt, updatedAt }
+// { id, userId, name, archivedAt, createdAt, updatedAt }
 ```
 
 ---
@@ -136,10 +113,6 @@ type Activity = typeof activities.$inferSelect
 | id | TEXT PK | UUID |
 | userId | TEXT FK | References `users.id`, cascade delete |
 | name | TEXT | NOT NULL, max 255 chars (DTO enforced) |
-| trackedDuration | INTEGER | NOT NULL, DEFAULT 0, seconds |
-| currentStreak | INTEGER | NOT NULL, DEFAULT 0, consecutive days |
-| longestStreak | INTEGER | NOT NULL, DEFAULT 0, historical max |
-| lastCompletedDate | TEXT | ISO date string (YYYY-MM-DD), nullable |
 | archivedAt | TEXT | ISO timestamp, NULL = active |
 | createdAt | TEXT | ISO timestamp |
 | updatedAt | TEXT | ISO timestamp |
@@ -160,17 +133,13 @@ type Activity = typeof activities.$inferSelect
 3. **User shape in controller**: `@CurrentUser()` returns `{ userId: string }`—use `user.userId`
 4. **Ownership enforcement**: Service always includes `userId` in queries—never trust client-provided userId
 5. **Archive/unarchive conflicts**: Throw `ConflictException` for invalid state transitions
-6. **Update behavior**: Only `name` is mutable via `PATCH`—streaks/progress updated via `updateProgress()`
-7. **Progress side effect**: `updateProgress()` not exposed to client—called internally by TimeEntriesService
-8. **Streak calculation**: One completion per day—subsequent time entries on same day don't increment
-9. **Streak reset logic**: Gap in dates (not yesterday) resets streak to 1
-10. **Date storage**: `lastCompletedDate` stored as ISO date string (YYYY-MM-DD), not full timestamp
-11. **Timestamp storage**: `createdAt`, `updatedAt`, `archivedAt` stored as ISO 8601 strings in SQLite TEXT columns
-12. **Required activityId**: Time entries cannot be created without valid activity ownership
-13. **Archived validation**: `verifyOwnership()` excludes archived activities—cannot track time against archived
-14. **Cascade behavior**: Deleting activity cascades to time entries (exceptional case—archive is normal flow)
-15. **Index usage**: Multi-column `idx_activities_user_archived` for "active activities" query
-16. **DTO validation**: `@MaxLength(255)` on name—enforced at DTO level, not database constraint
+6. **Update behavior**: Only `name` is mutable via `PATCH`
+7. **Timestamp storage**: `createdAt`, `updatedAt`, `archivedAt` stored as ISO 8601 strings in SQLite TEXT columns
+8. **Required activityId**: Time entries cannot be created without valid activity ownership
+9. **Archived validation**: `findById()` checks if activity is archived—cannot track time against archived activities
+10. **Cascade behavior**: Deleting activity cascades to time entries (exceptional case—archive is normal flow)
+11. **Index usage**: Multi-column `idx_activities_user_archived` for "active activities" query
+12. **DTO validation**: `@MaxLength(255)` on name—enforced at DTO level, not database constraint
 
 ---
 
