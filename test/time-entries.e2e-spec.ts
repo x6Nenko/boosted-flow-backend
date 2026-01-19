@@ -588,33 +588,30 @@ describe('Time Entries (e2e)', () => {
 
     it('should filter time entries by activityId', async () => {
       // Create second activity
-      const activity2Response = await request(app.getHttpServer())
+      const secondActivityResponse = await request(app.getHttpServer())
         .post('/activities')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ name: 'Second Activity' })
-        .expect(201);
+        .send({ name: 'Second Activity' });
 
-      const activity2Id = activity2Response.body.id;
+      const activity2Id = secondActivityResponse.body.id;
 
-      // Create entry in first activity
+      // Create entries in both activities
       const entry1Response = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ activityId, description: 'Entry in activity 1' });
 
-      // Stop first entry
       await request(app.getHttpServer())
         .post('/time-entries/stop')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ id: entry1Response.body.id });
 
-      // Create entry in second activity
       await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ activityId: activity2Id, description: 'Entry in activity 2' });
 
-      // Get all entries without filter
+      // Verify unfiltered returns both
       const allResponse = await request(app.getHttpServer())
         .get('/time-entries')
         .set('Authorization', `Bearer ${accessToken}`)
@@ -634,17 +631,15 @@ describe('Time Entries (e2e)', () => {
       expect(activity1Response.body[0].activityId).toBe(activityId);
 
       // Filter by second activity
-      const activity2EntriesResponse = await request(app.getHttpServer())
+      const activity2FilterResponse = await request(app.getHttpServer())
         .get('/time-entries')
         .query({ activityId: activity2Id })
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
-      expect(activity2EntriesResponse.body).toHaveLength(1);
-      expect(activity2EntriesResponse.body[0].description).toBe(
-        'Entry in activity 2',
-      );
-      expect(activity2EntriesResponse.body[0].activityId).toBe(activity2Id);
+      expect(activity2FilterResponse.body).toHaveLength(1);
+      expect(activity2FilterResponse.body[0].description).toBe('Entry in activity 2');
+      expect(activity2FilterResponse.body[0].activityId).toBe(activity2Id);
     });
   });
 

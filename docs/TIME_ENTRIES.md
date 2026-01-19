@@ -16,7 +16,7 @@ src/
 │       ├── start-time-entry.dto.ts      # Validation: activityId, optional taskId, optional description (max 500 chars)
 │       ├── stop-time-entry.dto.ts       # Validation: UUID id
 │       ├── update-time-entry.dto.ts     # Validation: optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3)
-│       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to
+│       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to, optional UUID activityId
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
     └── relations.ts                # User ↔ TimeEntry, Activity ↔ TimeEntry, Task ↔ TimeEntry, Tags ↔ TimeEntry
@@ -55,10 +55,10 @@ src/
 8. Response: Updated `TimeEntry` object
 
 ### Get All Entries
-1. `GET /time-entries?from=&to=` → `GetTimeEntriesQueryDto` validates ISO8601 dates
-2. `TimeEntriesService.findAll()` → builds dynamic query with optional date filters
+1. `GET /time-entries?from=&to=&activityId=` → `GetTimeEntriesQueryDto` validates ISO8601 dates and UUID activityId
+2. `TimeEntriesService.findAll()` → builds dynamic query with optional date and activity filters
 3. Includes task and tags via relational query (single query with JOINs)
-4. Filters: `userId` (always), `startedAt >= from` (optional), `startedAt <= to` (optional)
+4. Filters: `userId` (always), `startedAt >= from` (optional), `startedAt <= to` (optional), `activityId` (optional)
 5. Response: Array of `TimeEntryWithRelations` objects (includes task, tags), sorted by `startedAt` DESC
 
 ### Get Current Active Entry
@@ -86,7 +86,7 @@ src/
 | **Ownership Validation** | Service always filters by `userId` from JWT—no cross-user access |
 | **Single Active Entry** | `ConflictException` prevents multiple running timers |
 | **Null-Safe Response** | `findCurrent` wraps result in `{ entry }` object |
-| **Dynamic Query Building** | `findAll` uses conditional `and()` with optional date filters |
+| **Dynamic Query Building** | `findAll` uses conditional `and()` with optional date and activity filters |
 | **Cascade Delete** | `onDelete: 'cascade'` on `userId` FK—user deletion removes entries |
 | **Task FK Set Null** | `onDelete: 'set null'` on `taskId` FK—task deletion nullifies reference |
 | **1-Week Edit Window** | Rating/comment/tags editable only within 1 week of stopping |
@@ -113,7 +113,7 @@ start(userId: string, activityId: string, description?: string, taskId?: string)
 stop(userId: string, id: string): Promise<TimeEntry>
 update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[] }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntryWithRelations | null>
-findAll(userId: string, from?: string, to?: string): Promise<TimeEntryWithRelations[]>
+findAll(userId: string, from?: string, to?: string, activityId?: string): Promise<TimeEntryWithRelations[]>
 delete(userId: string, id: string): Promise<void>
 ```
 
@@ -165,21 +165,22 @@ type TimeEntryWithRelations = TimeEntry & {
 4. **Entry typing**: Use `typeof timeEntries.$inferSelect` for `TimeEntry` type (Drizzle pattern)
 5. **Date format**: All timestamps stored as ISO 8601 strings in SQLite TEXT columns
 6. **Date filtering**: `from`/`to` filter on `startedAt`, not `stoppedAt`
-7. **Null wrapping**: `findCurrent` returns `{ entry }` object, not raw entry—ensures proper `null` serialization
-8. **No pagination**: `findAll` returns all matching entries—add pagination for production scale
-9. **Description limit**: 500 chars max enforced at DTO level, not database level
-10. **Rating range**: 1-5 enforced at DTO level, not database level
-11. **Comment limit**: 1000 chars max enforced at DTO level, not database level
-12. **Tag limit**: Max 3 tags per entry enforced at DTO level
-13. **1-week edit window**: Rating/comment/tags editable only within 1 week of `stoppedAt`
-14. **Edit requires stopped entry**: Cannot update rating/comment/tags on active entries
-15. **Cascade behavior**: Deleting a user removes all their time entries automatically
-16. **Task FK set null**: Deleting a task sets `taskId` to NULL on linked entries
-17. **Task-Activity validation**: Task must belong to same activity as time entry
-18. **Archived task exclusion**: Cannot start time entry with archived task
-19. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
-20. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
-21. **Hard delete**: `DELETE` endpoint permanently removes entry—no soft delete or recovery
+7. **Activity filtering**: `activityId` filter returns only entries for specified activity
+8. **Null wrapping**: `findCurrent` returns `{ entry }` object, not raw entry—ensures proper `null` serialization
+9. **No pagination**: `findAll` returns all matching entries—add pagination for production scale
+10. **Description limit**: 500 chars max enforced at DTO level, not database level
+11. **Rating range**: 1-5 enforced at DTO level, not database level
+12. **Comment limit**: 1000 chars max enforced at DTO level, not database level
+13. **Tag limit**: Max 3 tags per entry enforced at DTO level
+14. **1-week edit window**: Rating/comment/tags editable only within 1 week of `stoppedAt`
+15. **Edit requires stopped entry**: Cannot update rating/comment/tags on active entries
+16. **Cascade behavior**: Deleting a user removes all their time entries automatically
+17. **Task FK set null**: Deleting a task sets `taskId` to NULL on linked entries
+18. **Task-Activity validation**: Task must belong to same activity as time entry
+19. **Archived task exclusion**: Cannot start time entry with archived task
+20. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
+21. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
+22. **Hard delete**: `DELETE` endpoint permanently removes entry—no soft delete or recovery
 
 ---
 

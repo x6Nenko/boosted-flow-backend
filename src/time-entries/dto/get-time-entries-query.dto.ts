@@ -1,4 +1,4 @@
-import { IsISO8601, IsOptional } from 'class-validator';
+import { IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class GetTimeEntriesQueryDto {
@@ -12,7 +12,10 @@ export class GetTimeEntriesQueryDto {
   @IsISO8601({}, { message: 'To date must be a valid ISO 8601 date string' })
   to?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Filter time entries by activity ID',
+  })
   @IsOptional()
+  @IsUUID('4', { message: 'Activity ID must be a valid UUID' })
   activityId?: string;
 }
