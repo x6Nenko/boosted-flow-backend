@@ -63,7 +63,12 @@ export class TimeEntriesController {
     @CurrentUser() user: { userId: string },
     @Query() query: GetTimeEntriesQueryDto,
   ) {
-    return this.timeEntriesService.findAll(user.userId, query.from, query.to);
+    return this.timeEntriesService.findAll(
+      user.userId,
+      query.from,
+      query.to,
+      query.activityId,
+    );
   }
 
   @Get('current')

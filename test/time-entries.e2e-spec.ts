@@ -585,6 +585,67 @@ describe('Time Entries (e2e)', () => {
 
       expect(response.body).toHaveLength(0);
     });
+
+    it('should filter time entries by activityId', async () => {
+      // Create second activity
+      const activity2Response = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Second Activity' })
+        .expect(201);
+
+      const activity2Id = activity2Response.body.id;
+
+      // Create entry in first activity
+      const entry1Response = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, description: 'Entry in activity 1' });
+
+      // Stop first entry
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: entry1Response.body.id });
+
+      // Create entry in second activity
+      await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId: activity2Id, description: 'Entry in activity 2' });
+
+      // Get all entries without filter
+      const allResponse = await request(app.getHttpServer())
+        .get('/time-entries')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(allResponse.body).toHaveLength(2);
+
+      // Filter by first activity
+      const activity1Response = await request(app.getHttpServer())
+        .get('/time-entries')
+        .query({ activityId })
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(activity1Response.body).toHaveLength(1);
+      expect(activity1Response.body[0].description).toBe('Entry in activity 1');
+      expect(activity1Response.body[0].activityId).toBe(activityId);
+
+      // Filter by second activity
+      const activity2EntriesResponse = await request(app.getHttpServer())
+        .get('/time-entries')
+        .query({ activityId: activity2Id })
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(activity2EntriesResponse.body).toHaveLength(1);
+      expect(activity2EntriesResponse.body[0].description).toBe(
+        'Entry in activity 2',
+      );
+      expect(activity2EntriesResponse.body[0].activityId).toBe(activity2Id);
+    });
   });
 
   describe('GET /time-entries/current', () => {
@@ -938,7 +999,7 @@ describe('Time Entries (e2e)', () => {
       expect(currentResponse.body.entry).toBeNull();
     });
 
-    it('should not allow deleting another user\'s entry', async () => {
+    it("should not allow deleting another user's entry", async () => {
       const startResponse = await request(app.getHttpServer())
         .post('/time-entries/start')
         .set('Authorization', `Bearer ${accessToken}`)

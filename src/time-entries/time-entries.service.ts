@@ -177,6 +177,7 @@ export class TimeEntriesService {
     userId: string,
     from?: string,
     to?: string,
+    activityId?: string,
   ): Promise<TimeEntryWithRelations[]> {
     const conditions = [eq(timeEntries.userId, userId)];
 
@@ -186,6 +187,10 @@ export class TimeEntriesService {
 
     if (to) {
       conditions.push(lte(timeEntries.startedAt, to));
+    }
+
+    if (activityId) {
+      conditions.push(eq(timeEntries.activityId, activityId));
     }
 
     const entries = await this.databaseService.db.query.timeEntries.findMany({

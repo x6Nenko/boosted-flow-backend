@@ -11,4 +11,8 @@ export class GetTimeEntriesQueryDto {
   @IsOptional()
   @IsISO8601({}, { message: 'To date must be a valid ISO 8601 date string' })
   to?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  activityId?: string;
 }
