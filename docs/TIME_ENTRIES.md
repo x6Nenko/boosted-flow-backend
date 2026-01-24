@@ -37,21 +37,21 @@ src/
 8. Response: Full `TimeEntry` object
 
 ### Stop Timer
-1. `POST /time-entries/stop` → `StopTimeEntryDto` validates UUID `id`, optional rating (1-5), optional comment (max 1000 chars)
+1. `POST /time-entries/stop` → `StopTimeEntryDto` validates UUID `id`, optional distraction count (min 0)
 2. `TimeEntriesService.stop()` → finds entry by ID + userId (ownership check)
 3. If not found → `NotFoundException` (404)
 4. If already stopped → `ConflictException` (409)
-5. Updates `stoppedAt` to current timestamp
+5. Updates `stoppedAt` to current timestamp and `distractionCount` if provided
 6. Response: Updated `TimeEntry` object
 
 ### Update Time Entry
-1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3)
+1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3), optional distraction count (min 0)
 2. `TimeEntriesService.update()` → finds entry by ID + userId (ownership check)
 3. If not found → `NotFoundException` (404)
 4. If entry is still active (not stopped) → `ConflictException` (409)
 5. If more than 1 week since `stoppedAt` → `ForbiddenException` (403)
 6. If `tagIds` provided, replaces all tags via `TagsService.setEntryTags()`
-7. Updates `rating` and/or `comment` fields
+7. Updates `rating`, `comment`, and/or `distractionCount` fields
 8. Response: Updated `TimeEntry` object
 
 ### Get All Entries
@@ -110,8 +110,8 @@ src/
 ### TimeEntriesService
 ```typescript
 start(userId: string, activityId: string, description?: string, taskId?: string): Promise<TimeEntry>
-stop(userId: string, id: string): Promise<TimeEntry>
-update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[] }): Promise<TimeEntry>
+stop(userId: string, id: string, distractionCount?: number): Promise<TimeEntry>
+update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[]; distractionCount?: number }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntryWithRelations | null>
 findAll(userId: string, from?: string, to?: string, activityId?: string): Promise<TimeEntryWithRelations[]>
 delete(userId: string, id: string): Promise<void>
@@ -120,7 +120,7 @@ delete(userId: string, id: string): Promise<void>
 ### TimeEntry Type
 ```typescript
 type TimeEntry = typeof timeEntries.$inferSelect
-// { id, userId, activityId, taskId, description, startedAt, stoppedAt, rating, comment, createdAt }
+// { id, userId, activityId, taskId, description, startedAt, stoppedAt, rating, comment, distractionCount, createdAt }
 
 type TimeEntryWithRelations = TimeEntry & {
   task: { id: string; name: string; archivedAt: string | null } | null;
@@ -144,6 +144,7 @@ type TimeEntryWithRelations = TimeEntry & {
 | stoppedAt | TEXT | ISO string, NULL = active |
 | rating | INTEGER | Nullable, 1-5 (DTO enforced) |
 | comment | TEXT | Nullable, max 1000 chars (DTO enforced) |
+| distractionCount | INTEGER | NOT NULL, default 0, min 0 (DTO enforced) |
 | createdAt | TEXT | ISO string |
 
 ### Relations

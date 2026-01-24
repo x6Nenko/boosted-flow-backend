@@ -174,6 +174,7 @@ describe('Time Entries (e2e)', () => {
 
       expect(stopResponse.body.rating).toBeNull();
       expect(stopResponse.body.comment).toBeNull();
+      expect(stopResponse.body.distractionCount).toBe(0);
     });
 
     it('should return 404 when stopping non-existent entry', async () => {
@@ -220,6 +221,53 @@ describe('Time Entries (e2e)', () => {
         .post('/time-entries/stop')
         .send({ id: '00000000-0000-0000-0000-000000000000' })
         .expect(401);
+    });
+
+    it('should stop with distraction count', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      const stopResponse = await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id, distractionCount: 3 })
+        .expect(201);
+
+      expect(stopResponse.body.distractionCount).toBe(3);
+      expect(stopResponse.body.stoppedAt).not.toBeNull();
+    });
+
+    it('should stop with zero distraction count', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      const stopResponse = await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id, distractionCount: 0 })
+        .expect(201);
+
+      expect(stopResponse.body.distractionCount).toBe(0);
+    });
+
+    it('should return 400 for negative distraction count', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id, distractionCount: -1 })
+        .expect(400);
     });
   });
 
@@ -395,6 +443,72 @@ describe('Time Entries (e2e)', () => {
         .patch('/time-entries/00000000-0000-0000-0000-000000000000')
         .send({ rating: 5 })
         .expect(401);
+    });
+
+    it('should update distraction count', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id, distractionCount: 5 })
+        .expect(201);
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ distractionCount: 2 })
+        .expect(200);
+
+      expect(updateResponse.body.distractionCount).toBe(2);
+    });
+
+    it('should update distraction count with other fields', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id, distractionCount: 3 })
+        .expect(201);
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ rating: 4, comment: 'Good session', distractionCount: 1 })
+        .expect(200);
+
+      expect(updateResponse.body.rating).toBe(4);
+      expect(updateResponse.body.comment).toBe('Good session');
+      expect(updateResponse.body.distractionCount).toBe(1);
+    });
+
+    it('should return 400 for negative distraction count in update', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ distractionCount: -5 })
+        .expect(400);
     });
   });
 

@@ -34,4 +34,10 @@ export class UpdateTimeEntryDto {
   @ArrayMaxSize(3, { message: 'Cannot have more than 3 tags' })
   @IsUUID('all', { each: true, message: 'Each tag ID must be a valid UUID' })
   tagIds?: string[];
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsInt({ message: 'Distraction count must be an integer' })
+  @Min(0, { message: 'Distraction count must be at least 0' })
+  distractionCount?: number;
 }

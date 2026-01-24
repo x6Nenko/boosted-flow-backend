@@ -45,7 +45,7 @@ export class TimeEntriesController {
     @CurrentUser() user: { userId: string },
     @Body() dto: StopTimeEntryDto,
   ) {
-    return this.timeEntriesService.stop(user.userId, dto.id);
+    return this.timeEntriesService.stop(user.userId, dto.id, dto.distractionCount);
   }
 
   @Patch(':id')

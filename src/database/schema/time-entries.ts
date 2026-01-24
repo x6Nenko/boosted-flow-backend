@@ -19,6 +19,7 @@ export const timeEntries = sqliteTable(
     stoppedAt: text('stopped_at'),
     rating: integer('rating'),
     comment: text('comment'),
+    distractionCount: integer('distraction_count').default(0).notNull(),
     createdAt: text('created_at').notNull(),
   },
   (table) => [

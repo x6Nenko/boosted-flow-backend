@@ -1,0 +1,1 @@
+ALTER TABLE `time_entries` ADD `distraction_count` integer;

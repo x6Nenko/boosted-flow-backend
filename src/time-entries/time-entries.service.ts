@@ -81,7 +81,7 @@ export class TimeEntriesService {
     return entry;
   }
 
-  async stop(userId: string, id: string): Promise<TimeEntry> {
+  async stop(userId: string, id: string, distractionCount?: number): Promise<TimeEntry> {
     // Find the specific entry
     const entry = await this.databaseService.db.query.timeEntries.findFirst({
       where: and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)),
@@ -99,7 +99,10 @@ export class TimeEntriesService {
     const stoppedAt = new Date().toISOString();
     const [updated] = await this.databaseService.db
       .update(timeEntries)
-      .set({ stoppedAt })
+      .set({
+        stoppedAt,
+        distractionCount: distractionCount ?? 0,
+      })
       .where(eq(timeEntries.id, id))
       .returning();
 
@@ -109,7 +112,7 @@ export class TimeEntriesService {
   async update(
     userId: string,
     id: string,
-    data: { rating?: number; comment?: string; tagIds?: string[] },
+    data: { rating?: number; comment?: string; tagIds?: string[]; distractionCount?: number },
   ): Promise<TimeEntry> {
     const entry = await this.databaseService.db.query.timeEntries.findFirst({
       where: and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)),
@@ -139,6 +142,7 @@ export class TimeEntriesService {
       .set({
         rating: data.rating !== undefined ? data.rating : entry.rating,
         comment: data.comment !== undefined ? data.comment : entry.comment,
+        distractionCount: data.distractionCount ?? entry.distractionCount,
       })
       .where(eq(timeEntries.id, id))
       .returning();
