@@ -10,6 +10,8 @@ Passport JWT-based authentication with HTTP-only cookie refresh tokens, configur
 src/
 ├── main.ts                     # CORS + cookie-parser middleware
 ├── config/configuration.ts     # JWT secrets + frontend URL
+├── utils/
+│   └── parse-expiration.ts     # Shared utility for parsing time strings to milliseconds
 ├── auth/
 │   ├── auth.module.ts          # Feature module, configures JwtModule + PassportModule
 │   ├── auth.controller.ts      # HTTP endpoints with cookie management
@@ -172,7 +174,8 @@ jwt: {
   refreshSecret: process.env.JWT_REFRESH_SECRET,  // Refresh token signing
   accessExpiration: process.env.JWT_ACCESS_EXPIRATION || '1h',
   refreshExpiration: process.env.JWT_REFRESH_EXPIRATION || '30d',
-  rotationPeriod: process.env.JWT_ROTATION_PERIOD || '1h'
+  rotationPeriod: process.env.JWT_ROTATION_PERIOD || '1h',
+  cookieMaxAge: process.env.JWT_COOKIE_MAX_AGE || '30d'  // Parsed to ms via parseExpiration()
 },
 frontend: {
   url: process.env.FRONTEND_URL || 'http://localhost:5173'  // CORS origin
@@ -183,9 +186,10 @@ frontend: {
 - Access token: Default = 1 hour (`JWT_ACCESS_EXPIRATION`)  
 - Refresh token: Default = 30 days (`JWT_REFRESH_EXPIRATION`)  
 - Rotation period: Default = 1 hour (`JWT_ROTATION_PERIOD`)  
+- Cookie max age: Default = 30 days (`JWT_COOKIE_MAX_AGE`) - parsed to milliseconds  
 
 **Expiration Format**: Supports `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Examples: `15m`, `7d`, `1h`  
-**Cookie Settings**: `httpOnly`, `secure` (prod), `sameSite=lax`, `path=/auth`, `maxAge` matches refresh expiration
+**Cookie Settings**: `httpOnly`, `secure` (prod), `sameSite=lax`, `path=/auth`, `maxAge` parsed from time string
 
 ---
 

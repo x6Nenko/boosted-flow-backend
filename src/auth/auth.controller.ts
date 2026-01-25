@@ -16,6 +16,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './decorators/public.decorator';
+import { parseExpiration } from '../utils/parse-expiration';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -103,13 +104,16 @@ export class AuthController {
 
   private setRefreshTokenCookie(res: express.Response, refreshToken: string): void {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const cookieMaxAge = parseExpiration(
+      this.configService.get<string>('jwt.cookieMaxAge') || '30d',
+    );
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: isProduction, // HTTPS only in production
       sameSite: 'lax',
       path: '/auth',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+      maxAge: cookieMaxAge,
     });
   }
 

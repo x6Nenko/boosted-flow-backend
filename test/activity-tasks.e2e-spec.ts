@@ -10,6 +10,7 @@ import { TestDatabaseService } from './setup/test-database.service';
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret-for-e2e-testing-only';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
+process.env.JWT_COOKIE_MAX_AGE = '30d';
 
 describe('Activity Tasks (e2e)', () => {
   let app: INestApplication<App>;

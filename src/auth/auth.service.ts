@@ -12,6 +12,7 @@ import { eq, gt, and } from 'drizzle-orm';
 import { UsersService } from '../users/users.service';
 import { DatabaseService } from '../database/database.service';
 import { refreshTokens } from '../database/schema';
+import { parseExpiration } from '../utils/parse-expiration';
 
 @Injectable()
 export class AuthService {
@@ -95,7 +96,7 @@ export class AuthService {
     // 4. Check if refresh token should be rotated (based on JWT_ROTATION_PERIOD)
     const tokenAge = Date.now() - new Date(storedToken.createdAt).getTime();
     const rotationPeriod = this.configService.get<string>('jwt.rotationPeriod')!;
-    const rotationPeriodMs = this.parseExpiration(rotationPeriod);
+    const rotationPeriodMs = parseExpiration(rotationPeriod);
     const shouldRotate = tokenAge > rotationPeriodMs;
 
     if (shouldRotate) {
@@ -173,7 +174,7 @@ export class AuthService {
     // Store hashed refresh token
     const hashedToken = await this.hashToken(refreshToken);
     const expiresAt = new Date(
-      Date.now() + this.parseExpiration(refreshExpiration),
+      Date.now() + parseExpiration(refreshExpiration),
     ).toISOString();
 
     await this.databaseService.db.insert(refreshTokens).values({
@@ -198,19 +199,5 @@ export class AuthService {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     // converts bytes to hex string
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  private parseExpiration(expiration: string): number {
-    const unit = expiration.slice(-1);
-    const value = parseInt(expiration.slice(0, -1), 10);
-
-    const multipliers: Record<string, number> = {
-      s: 1000,
-      m: 60 * 1000,
-      h: 60 * 60 * 1000,
-      d: 24 * 60 * 60 * 1000,
-    };
-
-    return value * (multipliers[unit] || 0);
   }
 }

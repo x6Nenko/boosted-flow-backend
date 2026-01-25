@@ -14,6 +14,7 @@ process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
 process.env.JWT_ACCESS_EXPIRATION = '1h';
 process.env.JWT_REFRESH_EXPIRATION = '30d';
 process.env.JWT_ROTATION_PERIOD = '1h';
+process.env.JWT_COOKIE_MAX_AGE = '30d';
 
 function loadAppModule(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
