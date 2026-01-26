@@ -14,6 +14,9 @@ export default () => ({
   frontend: {
     url: process.env.FRONTEND_URL || 'http://localhost:5173',
   },
+  session: {
+    secret: process.env.SESSION_SECRET,
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,

@@ -120,6 +120,7 @@ src/
 | **Custom Param Decorator** | `@CurrentUser()` extracts `request.user` |
 | **HTTP-only Cookies** | Refresh tokens via `res.cookie()` with `httpOnly`, `secure`, `sameSite=lax` |
 | **Cookie Middleware** | `cookie-parser` in `main.ts` for request cookie parsing |
+| **Session Middleware** | `express-session` in `main.ts` for OAuth state storage |
 | **CORS with Credentials** | `credentials: true` + exact `origin` match for cookie support |
 | **Rate Limiting** | `@Throttle({ default: { limit: 10, ttl: 60000 } })` per endpoint |
 | **Async JWT Config** | `JwtModule.registerAsync()` with `ConfigService` injection |
@@ -229,6 +230,9 @@ jwt: {
 frontend: {
   url: process.env.FRONTEND_URL || 'http://localhost:5173'  // CORS origin + OAuth redirect
 },
+  session: {
+    secret: process.env.SESSION_SECRET
+  },
 google: {
   clientId: process.env.GOOGLE_CLIENT_ID,      // Google OAuth client ID
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,  // Google OAuth client secret
@@ -250,6 +254,7 @@ google: {
 2. Enable Google+ API and create OAuth 2.0 credentials  
 3. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`  
 4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` in `.env`
+5. Set `SESSION_SECRET` in `.env` (used by `express-session` for OAuth state storage)
 
 ---
 

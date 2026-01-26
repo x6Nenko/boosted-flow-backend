@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import session from 'express-session';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -17,6 +18,19 @@ async function bootstrap() {
 
   // Enable cookie parser middleware
   app.use(cookieParser());
+
+  app.use(
+    session({
+      secret: configService.getOrThrow<string>('session.secret'),
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    }),
+  );
 
   const logFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
   app.use(morgan(logFormat));
