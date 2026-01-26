@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
-import { users } from '../database/schema';
+import { users, oauthAccounts } from '../database/schema';
 
 @Injectable()
 export class UsersService {
@@ -29,6 +29,65 @@ export class UsersService {
         updatedAt: now,
       })
       .returning();
+
+    return user;
+  }
+
+  async findOrCreateOAuthUser(
+    provider: string,
+    providerUserId: string,
+    email: string,
+  ): Promise<typeof users.$inferSelect> {
+    // Check if OAuth account already exists
+    const existingOAuthAccount =
+      await this.databaseService.db.query.oauthAccounts.findFirst({
+        where: and(
+          eq(oauthAccounts.provider, provider),
+          eq(oauthAccounts.providerUserId, providerUserId),
+        ),
+        with: { user: true },
+      });
+
+    if (existingOAuthAccount) {
+      return existingOAuthAccount.user;
+    }
+
+    // Check if user with this email exists (link OAuth to existing account)
+    const normalizedEmail = this.normalizeEmail(email);
+    const existingUser = await this.findByEmail(normalizedEmail);
+    const now = new Date().toISOString();
+
+    if (existingUser) {
+      // Link OAuth account to existing user
+      await this.databaseService.db.insert(oauthAccounts).values({
+        provider,
+        providerUserId,
+        userId: existingUser.id,
+        createdAt: now,
+      });
+      return existingUser;
+    }
+
+    // Create new user + OAuth account
+    const userId = crypto.randomUUID();
+
+    const [user] = await this.databaseService.db
+      .insert(users)
+      .values({
+        id: userId,
+        email: normalizedEmail,
+        hashedPassword: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    await this.databaseService.db.insert(oauthAccounts).values({
+      provider,
+      providerUserId,
+      userId: user.id,
+      createdAt: now,
+    });
 
     return user;
   }

@@ -1,7 +1,7 @@
 # User Authentication Feature
 
 ## High-Level Purpose
-Passport JWT-based authentication with HTTP-only cookie refresh tokens, configurable token lifetimes, conditional refresh token rotation, bcrypt password hashing, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
+Passport JWT-based authentication with HTTP-only cookie refresh tokens, configurable token lifetimes, conditional refresh token rotation, bcrypt password hashing, OAuth support (Google, extensible to GitHub etc.), and scheduled token cleanup for a NestJS + Drizzle ORM backend.
 
 ---
 
@@ -9,7 +9,7 @@ Passport JWT-based authentication with HTTP-only cookie refresh tokens, configur
 ```
 src/
 ├── main.ts                     # CORS + cookie-parser middleware
-├── config/configuration.ts     # JWT secrets + frontend URL
+├── config/configuration.ts     # JWT secrets + frontend URL + Google OAuth config
 ├── utils/
 │   └── parse-expiration.ts     # Shared utility for parsing time strings to milliseconds
 ├── auth/
@@ -17,15 +17,18 @@ src/
 │   ├── auth.controller.ts      # HTTP endpoints with cookie management
 │   ├── auth.service.ts         # Business logic, token generation, password hashing
 │   ├── strategies/
-│   │   └── jwt.strategy.ts     # Passport JWT strategy for access token validation
+│   │   ├── jwt.strategy.ts     # Passport JWT strategy for access token validation
+│   │   └── google.strategy.ts  # Passport Google OAuth strategy
 │   ├── guards/
-│   │   └── jwt-auth.guard.ts   # Global JWT guard (extends AuthGuard('jwt'))
+│   │   ├── jwt-auth.guard.ts   # Global JWT guard (extends AuthGuard('jwt'))
+│   │   └── google-auth.guard.ts # Google OAuth guard (extends AuthGuard('google'))
 │   ├── decorators/
 │   │   ├── public.decorator.ts      # Marks routes as public (bypasses auth)
 │   │   └── current-user.decorator.ts # Extracts user from request
 │   └── dto/
 │       ├── register.dto.ts     # Validation: email, password (8-72 chars)
-│       └── login.dto.ts        # Validation: email, password
+│       ├── login.dto.ts        # Validation: email, password
+│       └── exchange-code.dto.ts # Validation: code
 ├── users/
 │   ├── users.module.ts         # Exports UsersService
 │   └── users.service.ts        # User CRUD operations
@@ -34,6 +37,8 @@ src/
 │   └── tasks.service.ts        # Token cleanup cron job
 └── database/schema/
     ├── users.ts                # User table definition
+    ├── oauth-accounts.ts       # OAuth provider accounts table
+    ├── auth-codes.ts           # One-time auth codes for OAuth flow
     ├── refresh-tokens.ts       # Refresh token table definition
     └── relations.ts            # Drizzle ORM relations
 ```
@@ -58,6 +63,24 @@ src/
 3. `generateTokens()` → new token pair issued with configured expiration times
 4. **Controller sets HTTP-only cookie** with refresh token
 5. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=...`
+
+### OAuth Login (Google)
+1. `GET /auth/google` → `GoogleAuthGuard` redirects to Google consent screen with CSRF state token
+2. User authenticates with Google and grants permission
+3. `GET /auth/google/callback` → Google redirects back with auth code and state
+4. `GoogleStrategy.validate()` validates:
+   - Email exists in profile
+   - Email is verified by Google (`email_verified: true`)
+   - Extracts `profile.id` (provider user ID) and verified email
+5. `AuthService.oauthLogin()` → `UsersService.findOrCreateOAuthUser()`:
+   - Looks up `oauth_accounts` by provider + providerUserId
+   - If found: returns linked user
+   - If not found: checks if verified email exists, links OAuth account or creates new user
+6. `createAuthCode()` → generates short-lived one-time code (5 min expiry), stores in `auth_codes`
+7. Redirect to frontend: `${FRONTEND_URL}/auth/callback?code=...`
+8. Frontend calls `POST /auth/exchange` with code
+9. `exchangeAuthCode()` validates code, deletes it, returns tokens
+10. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=...`
 
 ### Token Refresh
 1. `POST /auth/refresh` → **Controller extracts** `req.cookies['refreshToken']`
@@ -91,6 +114,8 @@ src/
 |---------|----------------|
 | **Global Guard** | `JwtAuthGuard` registered as `APP_GUARD` in `AppModule` |
 | **Passport Strategy** | `JwtStrategy` extends `PassportStrategy(Strategy)` for JWT validation |
+| **Google OAuth Strategy** | `GoogleStrategy` extends `PassportStrategy(Strategy, 'google')` with CSRF protection (`state: true`) |
+| **Email Verification** | Google OAuth validates `email_verified` before account creation/linking |
 | **Public Routes** | `@Public()` decorator + `IS_PUBLIC_KEY` metadata |
 | **Custom Param Decorator** | `@CurrentUser()` extracts `request.user` |
 | **HTTP-only Cookies** | Refresh tokens via `res.cookie()` with `httpOnly`, `secure`, `sameSite=lax` |
@@ -103,6 +128,8 @@ src/
 | **Scheduled Tasks** | `@Cron(EVERY_DAY_AT_MIDNIGHT)` for token cleanup |
 | **DTO Validation** | `class-validator` decorators (`@IsEmail`, `@MinLength`, etc.) |
 | **Response Passthrough** | `@Res({ passthrough: true })` to set cookies + return JSON |
+| **OAuth Account Linking** | `oauth_accounts` table links provider IDs to users |
+| **Auth Code Exchange** | One-time codes prevent token exposure in URLs |
 
 ---
 
@@ -114,6 +141,9 @@ src/
 @Post('login')     login(@Body() dto: LoginDto, @Res() res): Promise<{ accessToken }>
 @Post('refresh')   refresh(@Req() req, @Res() res): Promise<{ accessToken }>
 @Post('logout')    logout(@Req() req, @Res() res): Promise<void>
+@Get('google')     googleAuth(): void  // Redirects to Google
+@Get('google/callback')  googleCallback(@Req() req, @Res() res): void  // Redirects to frontend with code
+@Post('exchange')  exchangeCode(@Body() dto: ExchangeCodeDto, @Res() res): Promise<{ accessToken }>
 // private: setRefreshTokenCookie(), clearRefreshTokenCookie()
 ```
 
@@ -121,14 +151,17 @@ src/
 ```typescript
 register(email: string, password: string): Promise<TokenPair>
 login(email: string, password: string): Promise<TokenPair>
+oauthLogin(provider: string, providerUserId: string, email: string): Promise<string>  // Returns auth code
+exchangeAuthCode(code: string): Promise<TokenPair>
 refresh(refreshToken: string): Promise<TokenPair>  // Conditionally rotates based on age
 logout(refreshToken: string): Promise<void>
-// private: generateTokens(), hashToken(), parseExpiration()
+// private: generateTokens(), createAuthCode(), hashToken()
 ```
 
 ### UsersService
 ```typescript
 create(email: string, hashedPassword: string): Promise<User>
+findOrCreateOAuthUser(provider: string, providerUserId: string, email: string): Promise<User>
 findByEmail(email: string): Promise<User | undefined>
 findById(id: string): Promise<User | undefined>
 // private: normalizeEmail()
@@ -150,9 +183,25 @@ findById(id: string): Promise<User | undefined>
 |--------|------|-------|
 | id | TEXT PK | UUID |
 | email | TEXT UNIQUE | Normalized (lowercase, trimmed) |
-| hashedPassword | TEXT | bcrypt hash |
+| hashedPassword | TEXT | bcrypt hash (nullable for OAuth users) |
 | createdAt | TEXT | ISO string |
 | updatedAt | TEXT | ISO string |
+
+### `oauth_accounts`
+| Column | Type | Notes |
+|--------|------|-------|
+| provider | TEXT PK | 'google', 'github', etc. |
+| providerUserId | TEXT PK | Provider's user ID |
+| userId | TEXT FK | References `users.id` |
+| createdAt | TEXT | ISO string |
+
+### `auth_codes`
+| Column | Type | Notes |
+|--------|------|-------|
+| code | TEXT PK | UUID, one-time use |
+| userId | TEXT FK | References `users.id` |
+| expiresAt | TEXT | ISO string (5 min TTL) |
+| createdAt | TEXT | ISO string |
 
 ### `refresh_tokens`
 | Column | Type | Notes |
@@ -178,7 +227,12 @@ jwt: {
   cookieMaxAge: process.env.JWT_COOKIE_MAX_AGE || '30d'  // Parsed to ms via parseExpiration()
 },
 frontend: {
-  url: process.env.FRONTEND_URL || 'http://localhost:5173'  // CORS origin
+  url: process.env.FRONTEND_URL || 'http://localhost:5173'  // CORS origin + OAuth redirect
+},
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID,      // Google OAuth client ID
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,  // Google OAuth client secret
+  callbackUrl: process.env.GOOGLE_CALLBACK_URL  // e.g., http://localhost:3000/auth/google/callback
 }
 ```
 
@@ -190,6 +244,12 @@ frontend: {
 
 **Expiration Format**: Supports `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Examples: `15m`, `7d`, `1h`  
 **Cookie Settings**: `httpOnly`, `secure` (prod), `sameSite=lax`, `path=/auth`, `maxAge` parsed from time string
+
+**Google OAuth Setup**:  
+1. Create project in [Google Cloud Console](https://console.cloud.google.com/)  
+2. Enable Google+ API and create OAuth 2.0 credentials  
+3. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`  
+4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` in `.env`
 
 ---
 
@@ -219,6 +279,13 @@ frontend: {
 22. **Token reuse**: Within rotation period, same refresh token returned with new access token
 23. **Expiration parsing**: `parseExpiration()` converts time strings (`1h`, `30d`) to milliseconds
 24. **Configuration precedence**: Env vars override defaults in `configuration.ts`
+25. **OAuth users**: Have `hashedPassword = null`, cannot use password login
+26. **OAuth identification**: Use `profile.id` (provider's user ID), not email, to identify returning users
+27. **OAuth account linking**: Same email links to existing user; `oauth_accounts` tracks providers
+28. **Auth code exchange**: OAuth redirects use one-time codes (5 min TTL), not tokens in URL
+29. **Adding OAuth providers**: Create strategy + guard, reuse `oauthLogin()` with provider name
+30. **OAuth CSRF protection**: `state: true` in strategy options prevents login CSRF attacks
+31. **Email verification requirement**: Only link accounts if provider confirms email is verified
 
 ---
 
@@ -230,6 +297,7 @@ frontend: {
 "@nestjs/throttler": "^6.5.0",
 "passport": "^0.7.0",
 "passport-jwt": "^4.0.1",
+"passport-google-oauth20": "^2.0.0",
 "bcryptjs": "^3.0.3",
 "cookie-parser": "^1.4.7",
 "uuid": "^13.0.0"

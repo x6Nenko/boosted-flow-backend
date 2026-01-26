@@ -8,11 +8,13 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, gt, and } from 'drizzle-orm';
+import { eq, gt, and, lt } from 'drizzle-orm';
 import { UsersService } from '../users/users.service';
 import { DatabaseService } from '../database/database.service';
-import { refreshTokens } from '../database/schema';
+import { refreshTokens, authCodes } from '../database/schema';
 import { parseExpiration } from '../utils/parse-expiration';
+
+const AUTH_CODE_EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
 export class AuthService {
@@ -51,12 +53,74 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // OAuth users don't have password
+    if (!user.hashedPassword) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.hashedPassword);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     return this.generateTokens(user.id);
+  }
+
+  async oauthLogin(provider: string, providerUserId: string, email: string) {
+    const user = await this.usersService.findOrCreateOAuthUser(
+      provider,
+      providerUserId,
+      email,
+    );
+    return this.createAuthCode(user.id);
+  }
+
+  async exchangeAuthCode(code: string) {
+    const now = new Date().toISOString();
+
+    // Find and validate code
+    const storedCode = await this.databaseService.db.query.authCodes.findFirst({
+      where: and(
+        eq(authCodes.code, code),
+        gt(authCodes.expiresAt, now),
+      ),
+    });
+
+    if (!storedCode) {
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+
+    // Delete used code (one-time use)
+    await this.databaseService.db
+      .delete(authCodes)
+      .where(eq(authCodes.code, code));
+
+    return this.generateTokens(storedCode.userId);
+  }
+
+  private async createAuthCode(userId: string): Promise<string> {
+    const code = uuidv4();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + AUTH_CODE_EXPIRATION_MS);
+
+    // Clean up expired codes for this user
+    await this.databaseService.db
+      .delete(authCodes)
+      .where(
+        and(
+          eq(authCodes.userId, userId),
+          lt(authCodes.expiresAt, now.toISOString()),
+        ),
+      );
+
+    await this.databaseService.db.insert(authCodes).values({
+      code,
+      userId,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: now.toISOString(),
+    });
+
+    return code;
   }
 
   async refresh(refreshToken: string) {

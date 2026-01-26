@@ -4,4 +4,6 @@ export * from './tasks';
 export * from './tags';
 export * from './time-entries';
 export * from './refresh-tokens';
+export * from './oauth-accounts';
+export * from './auth-codes';
 export * from './relations';

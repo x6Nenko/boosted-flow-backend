@@ -2,11 +2,13 @@ import {
   Controller,
   Post,
   Body,
+  Get,
   HttpCode,
   HttpStatus,
   Res,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type * as express from 'express';
@@ -15,7 +17,9 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ExchangeCodeDto } from './dto/exchange-code.dto';
 import { Public } from './decorators/public.decorator';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { parseExpiration } from '../utils/parse-expiration';
 
 @ApiTags('auth')
@@ -100,6 +104,46 @@ export class AuthController {
 
     // Clear refresh token cookie
     this.clearRefreshTokenCookie(res);
+  }
+
+  @Public()
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  googleAuth() {
+    // Guard redirects to Google
+  }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  async googleCallback(
+    @Req() req: express.Request,
+    @Res() res: express.Response,
+  ) {
+    const { providerUserId, email } = req.user as {
+      providerUserId: string;
+      email: string;
+    };
+    const code = await this.authService.oauthLogin('google', providerUserId, email);
+
+    const frontendUrl = this.configService.get<string>('frontend.url');
+    res.redirect(`${frontendUrl}/auth/callback?code=${code}`);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('exchange')
+  @HttpCode(HttpStatus.OK)
+  async exchangeCode(
+    @Body() dto: ExchangeCodeDto,
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    const { accessToken, refreshToken } =
+      await this.authService.exchangeAuthCode(dto.code);
+
+    this.setRefreshTokenCookie(res, refreshToken);
+
+    return { accessToken };
   }
 
   private setRefreshTokenCookie(res: express.Response, refreshToken: string): void {

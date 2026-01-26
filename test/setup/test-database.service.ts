@@ -26,7 +26,7 @@ export class TestDatabaseService {
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
-        hashed_password TEXT NOT NULL,
+        hashed_password TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -86,6 +86,21 @@ export class TestDatabaseService {
         PRIMARY KEY (time_entry_id, tag_id)
       );
 
+      CREATE TABLE IF NOT EXISTS oauth_accounts (
+        provider TEXT NOT NULL,
+        provider_user_id TEXT NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (provider, provider_user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS auth_codes (
+        code TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_user_archived ON activities(user_id, archived_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_activity_date ON time_entries(activity_id, started_at);
@@ -106,6 +121,8 @@ export class TestDatabaseService {
       DELETE FROM tags;
       DELETE FROM activities;
       DELETE FROM refresh_tokens;
+      DELETE FROM oauth_accounts;
+      DELETE FROM auth_codes;
       DELETE FROM users;
     `);
   }

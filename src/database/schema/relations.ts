@@ -5,6 +5,8 @@ import { tasks } from './tasks';
 import { tags, timeEntryTags } from './tags';
 import { timeEntries } from './time-entries';
 import { refreshTokens } from './refresh-tokens';
+import { oauthAccounts } from './oauth-accounts';
+import { authCodes } from './auth-codes';
 
 export const usersRelations = relations(users, ({ many }) => ({
   activities: many(activities),
@@ -12,6 +14,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   tags: many(tags),
   timeEntries: many(timeEntries),
   refreshTokens: many(refreshTokens),
+  oauthAccounts: many(oauthAccounts),
+  authCodes: many(authCodes),
 }));
 
 export const activitiesRelations = relations(activities, ({ one, many }) => ({
@@ -73,6 +77,20 @@ export const timeEntriesRelations = relations(timeEntries, ({ one, many }) => ({
 export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   user: one(users, {
     fields: [refreshTokens.userId],
+    references: [users.id],
+  }),
+}));
+
+export const oauthAccountsRelations = relations(oauthAccounts, ({ one }) => ({
+  user: one(users, {
+    fields: [oauthAccounts.userId],
+    references: [users.id],
+  }),
+}));
+
+export const authCodesRelations = relations(authCodes, ({ one }) => ({
+  user: one(users, {
+    fields: [authCodes.userId],
     references: [users.id],
   }),
 }));

@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
+import { users } from '../src/database/schema';
 
 // Load test env vars before anything else
 process.env.NODE_ENV = 'test'; // turns rate limiting offf
@@ -182,6 +183,27 @@ describe('Auth (e2e)', () => {
         .post('/auth/login')
         .send({
           email: 'nonexistent@example.com',
+          password: 'Password123!',
+        })
+        .expect(401);
+    });
+
+    it('should return 401 for OAuth user attempting password login', async () => {
+      // Manually insert OAuth user (no password)
+      const now = new Date().toISOString();
+      await testDbService.db.insert(users).values({
+        id: crypto.randomUUID(),
+        email: 'oauth@example.com',
+        hashedPassword: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Try to login with password - should fail
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'oauth@example.com',
           password: 'Password123!',
         })
         .expect(401);
