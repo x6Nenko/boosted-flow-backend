@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CreateManualTimeEntryDto } from './dto/create-manual-time-entry.dto';
 import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto';
 import { StartTimeEntryDto } from './dto/start-time-entry.dto';
 import { StopTimeEntryDto } from './dto/stop-time-entry.dto';
@@ -46,6 +47,15 @@ export class TimeEntriesController {
     @Body() dto: StopTimeEntryDto,
   ) {
     return this.timeEntriesService.stop(user.userId, dto.id, dto.distractionCount);
+  }
+
+  @Post('manual')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async createManual(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: CreateManualTimeEntryDto,
+  ) {
+    return this.timeEntriesService.createManual(user.userId, dto);
   }
 
   @Patch(':id')

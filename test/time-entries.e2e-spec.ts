@@ -1144,4 +1144,244 @@ describe('Time Entries (e2e)', () => {
       expect(entries).toHaveLength(1);
     });
   });
+
+  describe('POST /time-entries/manual', () => {
+    it('should create a manual time entry', async () => {
+      const startedAt = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago
+      const stoppedAt = new Date().toISOString();
+
+      const response = await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, startedAt, stoppedAt })
+        .expect(201);
+
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.activityId).toBe(activityId);
+      expect(response.body.startedAt).toBe(startedAt);
+      expect(response.body.stoppedAt).toBe(stoppedAt);
+      expect(response.body.description).toBeNull();
+    });
+
+    it('should create a manual entry with all optional fields', async () => {
+      const startedAt = new Date(Date.now() - 3600000).toISOString();
+      const stoppedAt = new Date().toISOString();
+
+      const response = await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          activityId,
+          startedAt,
+          stoppedAt,
+          description: 'Manual entry',
+          rating: 4,
+          comment: 'Good session',
+          distractionCount: 2,
+        })
+        .expect(201);
+
+      expect(response.body.description).toBe('Manual entry');
+      expect(response.body.rating).toBe(4);
+      expect(response.body.comment).toBe('Good session');
+      expect(response.body.distractionCount).toBe(2);
+    });
+
+    it('should return 400 when startedAt is after stoppedAt', async () => {
+      const startedAt = new Date().toISOString();
+      const stoppedAt = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago
+
+      await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, startedAt, stoppedAt })
+        .expect(400);
+    });
+
+    it('should return 400 when startedAt equals stoppedAt', async () => {
+      const now = new Date().toISOString();
+
+      await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, startedAt: now, stoppedAt: now })
+        .expect(400);
+    });
+
+    it('should return 400 for invalid date format', async () => {
+      await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId, startedAt: 'invalid', stoppedAt: 'also-invalid' })
+        .expect(400);
+    });
+
+    it('should return 404 for non-existent activity', async () => {
+      const startedAt = new Date(Date.now() - 3600000).toISOString();
+      const stoppedAt = new Date().toISOString();
+
+      await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          activityId: '00000000-0000-0000-0000-000000000000',
+          startedAt,
+          stoppedAt,
+        })
+        .expect(404);
+    });
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .post('/time-entries/manual')
+        .send({
+          activityId,
+          startedAt: new Date().toISOString(),
+          stoppedAt: new Date().toISOString(),
+        })
+        .expect(401);
+    });
+  });
+
+  describe('PATCH /time-entries/:id (timestamps)', () => {
+    it('should update startedAt timestamp', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      const newStartedAt = new Date(Date.now() - 7200000).toISOString(); // 2 hours ago
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ startedAt: newStartedAt })
+        .expect(200);
+
+      expect(updateResponse.body.startedAt).toBe(newStartedAt);
+    });
+
+    it('should update stoppedAt timestamp', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      const newStoppedAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour in future
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ stoppedAt: newStoppedAt })
+        .expect(200);
+
+      expect(updateResponse.body.stoppedAt).toBe(newStoppedAt);
+    });
+
+    it('should update both timestamps', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      const newStartedAt = new Date(Date.now() - 7200000).toISOString();
+      const newStoppedAt = new Date(Date.now() - 3600000).toISOString();
+
+      const updateResponse = await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ startedAt: newStartedAt, stoppedAt: newStoppedAt })
+        .expect(200);
+
+      expect(updateResponse.body.startedAt).toBe(newStartedAt);
+      expect(updateResponse.body.stoppedAt).toBe(newStoppedAt);
+    });
+
+    it('should return 400 when startedAt becomes after stoppedAt', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Try to set startedAt after the existing stoppedAt
+      const invalidStartedAt = new Date(Date.now() + 7200000).toISOString();
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ startedAt: invalidStartedAt })
+        .expect(400);
+    });
+
+    it('should return 400 when stoppedAt becomes before startedAt', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      // Try to set stoppedAt before the existing startedAt
+      const invalidStoppedAt = new Date(Date.now() - 86400000).toISOString(); // 24 hours ago
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ stoppedAt: invalidStoppedAt })
+        .expect(400);
+    });
+
+    it('should return 400 for invalid timestamp format', async () => {
+      const startResponse = await request(app.getHttpServer())
+        .post('/time-entries/start')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ activityId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/time-entries/stop')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ id: startResponse.body.id })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/time-entries/${startResponse.body.id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ startedAt: 'not-a-valid-date' })
+        .expect(400);
+    });
+  });
 });

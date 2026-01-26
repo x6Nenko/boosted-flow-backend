@@ -1,6 +1,4 @@
 import {
-  ArrayMaxSize,
-  IsArray,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -10,18 +8,31 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class UpdateTimeEntryDto {
-  @ApiPropertyOptional({ description: 'Start time in ISO 8601 format' })
-  @IsOptional()
+export class CreateManualTimeEntryDto {
+  @ApiProperty({ description: 'Activity ID to track time against' })
+  @IsUUID('all', { message: 'Invalid activity ID' })
+  activityId: string;
+
+  @ApiProperty({ description: 'Start time in ISO 8601 format' })
   @IsISO8601({}, { message: 'startedAt must be a valid ISO 8601 date' })
-  startedAt?: string;
+  startedAt: string;
 
-  @ApiPropertyOptional({ description: 'Stop time in ISO 8601 format' })
-  @IsOptional()
+  @ApiProperty({ description: 'Stop time in ISO 8601 format' })
   @IsISO8601({}, { message: 'stoppedAt must be a valid ISO 8601 date' })
-  stoppedAt?: string;
+  stoppedAt: string;
+
+  @ApiPropertyOptional({ description: 'Task ID within the activity' })
+  @IsOptional()
+  @IsUUID('all', { message: 'Invalid task ID' })
+  taskId?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString({ message: 'Description must be a string' })
+  @MaxLength(500, { message: 'Description cannot exceed 500 characters' })
+  description?: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 5 })
   @IsOptional()
@@ -35,16 +46,6 @@ export class UpdateTimeEntryDto {
   @IsString({ message: 'Comment must be a string' })
   @MaxLength(1000, { message: 'Comment cannot exceed 1000 characters' })
   comment?: string;
-
-  @ApiPropertyOptional({
-    description: 'Tag IDs to attach to this entry (max 3)',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray({ message: 'Tag IDs must be an array' })
-  @ArrayMaxSize(3, { message: 'Cannot have more than 3 tags' })
-  @IsUUID('all', { each: true, message: 'Each tag ID must be a valid UUID' })
-  tagIds?: string[];
 
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional()

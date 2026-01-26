@@ -10,13 +10,14 @@ Manual time tracking with start/stop functionality, session rating and comments,
 src/
 ├── time-entries/
 │   ├── time-entries.module.ts      # Feature module, imports DatabaseModule + ActivitiesModule + ActivityTasksModule + TagsModule
-│   ├── time-entries.controller.ts  # HTTP endpoints (start, stop, update, findAll, findCurrent)
+│   ├── time-entries.controller.ts  # HTTP endpoints (start, stop, manual, update, findAll, findCurrent)
 │   ├── time-entries.service.ts     # Business logic, CRUD operations
 │   └── dto/
-│       ├── start-time-entry.dto.ts      # Validation: activityId, optional taskId, optional description (max 500 chars)
-│       ├── stop-time-entry.dto.ts       # Validation: UUID id
-│       ├── update-time-entry.dto.ts     # Validation: optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3)
-│       └── get-time-entries-query.dto.ts # Validation: optional ISO8601 from/to, optional UUID activityId
+│       ├── start-time-entry.dto.ts           # Validation: activityId, optional taskId, optional description (max 500 chars)
+│       ├── stop-time-entry.dto.ts            # Validation: UUID id
+│       ├── create-manual-time-entry.dto.ts   # Validation: activityId, startedAt, stoppedAt (ISO8601), optional taskId, description, rating, comment, distractionCount
+│       ├── update-time-entry.dto.ts          # Validation: optional startedAt/stoppedAt (ISO8601), rating (1-5), comment (max 1000 chars), tagIds (max 3)
+│       └── get-time-entries-query.dto.ts     # Validation: optional ISO8601 from/to, optional UUID activityId
 └── database/schema/
     ├── time-entries.ts             # Time entry table definition
     └── relations.ts                # User ↔ TimeEntry, Activity ↔ TimeEntry, Task ↔ TimeEntry, Tags ↔ TimeEntry
@@ -44,15 +45,26 @@ src/
 5. Updates `stoppedAt` to current timestamp and `distractionCount` if provided
 6. Response: Updated `TimeEntry` object
 
+### Manual Entry
+1. `POST /time-entries/manual` → `CreateManualTimeEntryDto` validates required `activityId`, `startedAt`, `stoppedAt` (ISO8601), optional `taskId`, `description`, `rating`, `comment`, `distractionCount`
+2. `@CurrentUser()` extracts `{ userId: string }` from request
+3. `TimeEntriesService.createManual()` → validates `startedAt < stoppedAt`
+4. If `startedAt >= stoppedAt` → `BadRequestException` (400)
+5. Verifies activity ownership via `ActivitiesService.findById()` (throws NotFoundException if not found or archived)
+6. If `taskId` provided, verifies task ownership and activity match via `ActivityTasksService.verifyOwnership()`
+7. Creates new entry with UUID and provided timestamps (already stopped)
+8. Response: Full `TimeEntry` object
+
 ### Update Time Entry
-1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional rating (1-5), optional comment (max 1000 chars), optional tagIds (max 3), optional distraction count (min 0)
+1. `PATCH /time-entries/:id` → `UpdateTimeEntryDto` validates optional startedAt/stoppedAt (ISO8601), rating (1-5), comment (max 1000 chars), tagIds (max 3), distraction count (min 0)
 2. `TimeEntriesService.update()` → finds entry by ID + userId (ownership check)
 3. If not found → `NotFoundException` (404)
 4. If entry is still active (not stopped) → `ConflictException` (409)
 5. If more than 1 week since `stoppedAt` → `ForbiddenException` (403)
-6. If `tagIds` provided, replaces all tags via `TagsService.setEntryTags()`
-7. Updates `rating`, `comment`, and/or `distractionCount` fields
-8. Response: Updated `TimeEntry` object
+6. If updating timestamps, validates `startedAt < stoppedAt` → `BadRequestException` (400) if invalid
+7. If `tagIds` provided, replaces all tags via `TagsService.setEntryTags()`
+8. Updates `startedAt`, `stoppedAt`, `rating`, `comment`, and/or `distractionCount` fields
+9. Response: Updated `TimeEntry` object
 
 ### Get All Entries
 1. `GET /time-entries?from=&to=&activityId=` → `GetTimeEntriesQueryDto` validates ISO8601 dates and UUID activityId
@@ -101,6 +113,7 @@ src/
 ```typescript
 @Post('start')   start(@CurrentUser() user, @Body() dto: StartTimeEntryDto): Promise<TimeEntry>
 @Post('stop')    stop(@CurrentUser() user, @Body() dto: StopTimeEntryDto): Promise<TimeEntry>
+@Post('manual')  createManual(@CurrentUser() user, @Body() dto: CreateManualTimeEntryDto): Promise<TimeEntry>
 @Patch(':id')    update(@CurrentUser() user, @Param('id') id, @Body() dto: UpdateTimeEntryDto): Promise<TimeEntry>
 @Get()           findAll(@CurrentUser() user, @Query() query: GetTimeEntriesQueryDto): Promise<TimeEntry[]>
 @Get('current')  findCurrent(@CurrentUser() user): Promise<{ entry: TimeEntry | null }>
@@ -111,7 +124,8 @@ src/
 ```typescript
 start(userId: string, activityId: string, description?: string, taskId?: string): Promise<TimeEntry>
 stop(userId: string, id: string, distractionCount?: number): Promise<TimeEntry>
-update(userId: string, id: string, data: { rating?: number; comment?: string; tagIds?: string[]; distractionCount?: number }): Promise<TimeEntry>
+createManual(userId: string, data: { activityId: string; startedAt: string; stoppedAt: string; taskId?: string; description?: string; rating?: number; comment?: string; distractionCount?: number }): Promise<TimeEntry>
+update(userId: string, id: string, data: { startedAt?: string; stoppedAt?: string; rating?: number; comment?: string; tagIds?: string[]; distractionCount?: number }): Promise<TimeEntry>
 findActive(userId: string): Promise<TimeEntryWithRelations | null>
 findAll(userId: string, from?: string, to?: string, activityId?: string): Promise<TimeEntryWithRelations[]>
 delete(userId: string, id: string): Promise<void>
@@ -173,8 +187,8 @@ type TimeEntryWithRelations = TimeEntry & {
 11. **Rating range**: 1-5 enforced at DTO level, not database level
 12. **Comment limit**: 1000 chars max enforced at DTO level, not database level
 13. **Tag limit**: Max 3 tags per entry enforced at DTO level
-14. **1-week edit window**: Rating/comment/tags editable only within 1 week of `stoppedAt`
-15. **Edit requires stopped entry**: Cannot update rating/comment/tags on active entries
+14. **1-week edit window**: Rating/comment/tags/timestamps editable only within 1 week of `stoppedAt`
+15. **Edit requires stopped entry**: Cannot update rating/comment/tags/timestamps on active entries
 16. **Cascade behavior**: Deleting a user removes all their time entries automatically
 17. **Task FK set null**: Deleting a task sets `taskId` to NULL on linked entries
 18. **Task-Activity validation**: Task must belong to same activity as time entry
@@ -182,6 +196,8 @@ type TimeEntryWithRelations = TimeEntry & {
 20. **Relational query pattern**: `findAll` and `findActive` use Drizzle's relational query builder to avoid N+1
 21. **Tag replace semantics**: Providing `tagIds` in update replaces all existing tags
 22. **Hard delete**: `DELETE` endpoint permanently removes entry—no soft delete or recovery
+23. **Manual entry validation**: `startedAt` must be before `stoppedAt` for manual entries and timestamp updates
+24. **Manual entry creation**: Manual entries are created already stopped—no active timer conflict
 
 ---
 

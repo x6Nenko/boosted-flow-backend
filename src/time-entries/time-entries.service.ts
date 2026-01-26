@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -81,6 +82,64 @@ export class TimeEntriesService {
     return entry;
   }
 
+  async createManual(
+    userId: string,
+    data: {
+      activityId: string;
+      startedAt: string;
+      stoppedAt: string;
+      taskId?: string;
+      description?: string;
+      rating?: number;
+      comment?: string;
+      distractionCount?: number;
+    },
+  ): Promise<TimeEntry> {
+    // Validate startedAt is before stoppedAt
+    const startTime = new Date(data.startedAt).getTime();
+    const stopTime = new Date(data.stoppedAt).getTime();
+    if (startTime >= stopTime) {
+      throw new BadRequestException('startedAt must be before stoppedAt');
+    }
+
+    // Verify activity ownership and that it's not archived
+    await this.activitiesService.findById(userId, data.activityId);
+
+    // If taskId provided, verify it belongs to user and matches activity
+    if (data.taskId) {
+      const isTaskOwner = await this.activityTasksService.verifyOwnership(
+        userId,
+        data.taskId,
+        data.activityId,
+      );
+      if (!isTaskOwner) {
+        throw new NotFoundException('Task not found');
+      }
+    }
+
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    const [entry] = await this.databaseService.db
+      .insert(timeEntries)
+      .values({
+        id,
+        userId,
+        activityId: data.activityId,
+        taskId: data.taskId || null,
+        description: data.description || null,
+        startedAt: data.startedAt,
+        stoppedAt: data.stoppedAt,
+        rating: data.rating ?? null,
+        comment: data.comment ?? null,
+        distractionCount: data.distractionCount ?? 0,
+        createdAt: now,
+      })
+      .returning();
+
+    return entry;
+  }
+
   async stop(userId: string, id: string, distractionCount?: number): Promise<TimeEntry> {
     // Find the specific entry
     const entry = await this.databaseService.db.query.timeEntries.findFirst({
@@ -112,7 +171,14 @@ export class TimeEntriesService {
   async update(
     userId: string,
     id: string,
-    data: { rating?: number; comment?: string; tagIds?: string[]; distractionCount?: number },
+    data: {
+      startedAt?: string;
+      stoppedAt?: string;
+      rating?: number;
+      comment?: string;
+      tagIds?: string[];
+      distractionCount?: number;
+    },
   ): Promise<TimeEntry> {
     const entry = await this.databaseService.db.query.timeEntries.findFirst({
       where: and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)),
@@ -132,6 +198,15 @@ export class TimeEntriesService {
       throw new ForbiddenException('Cannot edit time entry after 1 week');
     }
 
+    // Validate startedAt/stoppedAt if both are being updated
+    const newStartedAt = data.startedAt ?? entry.startedAt;
+    const newStoppedAt = data.stoppedAt ?? entry.stoppedAt;
+    const startTime = new Date(newStartedAt).getTime();
+    const stopTime = new Date(newStoppedAt).getTime();
+    if (startTime >= stopTime) {
+      throw new BadRequestException('startedAt must be before stoppedAt');
+    }
+
     // Update tags if provided
     if (data.tagIds !== undefined) {
       await this.tagsService.setEntryTags(userId, id, data.tagIds);
@@ -140,6 +215,8 @@ export class TimeEntriesService {
     const [updated] = await this.databaseService.db
       .update(timeEntries)
       .set({
+        startedAt: data.startedAt !== undefined ? data.startedAt : entry.startedAt,
+        stoppedAt: data.stoppedAt !== undefined ? data.stoppedAt : entry.stoppedAt,
         rating: data.rating !== undefined ? data.rating : entry.rating,
         comment: data.comment !== undefined ? data.comment : entry.comment,
         distractionCount: data.distractionCount ?? entry.distractionCount,
