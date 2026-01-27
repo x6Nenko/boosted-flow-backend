@@ -9,6 +9,7 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type * as express from 'express';
@@ -18,16 +19,22 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ExchangeCodeDto } from './dto/exchange-code.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from './decorators/public.decorator';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { parseExpiration } from '../utils/parse-expiration';
+import { EmailService } from '../email/email.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) { }
 
   @Public()
@@ -144,6 +151,38 @@ export class AuthController {
     this.setRefreshTokenCookie(res, refreshToken);
 
     return { accessToken };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    const token = await this.authService.createPasswordResetToken(dto.email);
+
+    // Send email only if token was created (user exists with password)
+    if (token) {
+      const frontendUrl = this.configService.get<string>('frontend.url');
+      const resetUrl = `${frontendUrl}/auth/reset-password?token=${token}`;
+
+      try {
+        await this.emailService.sendPasswordResetEmail(dto.email, resetUrl);
+      } catch {
+        this.logger.error(`Failed to send password reset email to ${dto.email}`);
+      }
+    }
+
+    // Always return success to prevent email enumeration
+    return { message: 'If an account exists, a password reset email has been sent' };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto.token, dto.password);
+    return { message: 'Password has been reset successfully' };
   }
 
   private setRefreshTokenCookie(res: express.Response, refreshToken: string): void {

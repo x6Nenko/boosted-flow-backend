@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   InternalServerErrorException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -11,10 +12,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { eq, gt, and, lt } from 'drizzle-orm';
 import { UsersService } from '../users/users.service';
 import { DatabaseService } from '../database/database.service';
-import { refreshTokens, authCodes } from '../database/schema';
+import { refreshTokens, authCodes, passwordResetTokens } from '../database/schema';
 import { parseExpiration } from '../utils/parse-expiration';
 
 const AUTH_CODE_EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
+const PASSWORD_RESET_EXPIRATION_MS = 60 * 60 * 1000; // 1 hour
 
 @Injectable()
 export class AuthService {
@@ -208,6 +210,77 @@ export class AuthService {
       );
 
     return;
+  }
+
+  async createPasswordResetToken(email: string): Promise<string | null> {
+    const user = await this.usersService.findByEmail(email);
+
+    // Return null if user not found (don't reveal user existence)
+    if (!user) {
+      return null;
+    }
+
+    // OAuth-only users cannot reset password
+    if (!user.hashedPassword) {
+      return null;
+    }
+
+    const token = uuidv4();
+    const tokenId = uuidv4();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + PASSWORD_RESET_EXPIRATION_MS);
+
+    // Invalidate existing tokens for this user
+    await this.databaseService.db
+      .update(passwordResetTokens)
+      .set({ used: true })
+      .where(eq(passwordResetTokens.userId, user.id));
+
+    const hashedToken = await this.hashToken(token);
+
+    await this.databaseService.db.insert(passwordResetTokens).values({
+      id: tokenId,
+      userId: user.id,
+      hashedToken,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: now.toISOString(),
+    });
+
+    return token;
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const hashedToken = await this.hashToken(token);
+    const now = new Date().toISOString();
+
+    const storedToken =
+      await this.databaseService.db.query.passwordResetTokens.findFirst({
+        where: and(
+          eq(passwordResetTokens.hashedToken, hashedToken),
+          eq(passwordResetTokens.used, false),
+          gt(passwordResetTokens.expiresAt, now),
+        ),
+      });
+
+    if (!storedToken) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    // Mark token as used
+    await this.databaseService.db
+      .update(passwordResetTokens)
+      .set({ used: true })
+      .where(eq(passwordResetTokens.id, storedToken.id));
+
+    // Hash new password and update user
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await this.usersService.updatePassword(storedToken.userId, hashedPassword);
+
+    // Revoke all refresh tokens for security
+    await this.databaseService.db
+      .update(refreshTokens)
+      .set({ revoked: true })
+      .where(eq(refreshTokens.userId, storedToken.userId));
   }
 
   private async generateTokens(userId: string) {

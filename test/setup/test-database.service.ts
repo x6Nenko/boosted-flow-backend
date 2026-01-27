@@ -101,6 +101,15 @@ export class TestDatabaseService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        hashed_token TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_user_archived ON activities(user_id, archived_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at);
       CREATE INDEX IF NOT EXISTS idx_time_entries_activity_date ON time_entries(activity_id, started_at);
@@ -121,6 +130,7 @@ export class TestDatabaseService {
       DELETE FROM tags;
       DELETE FROM activities;
       DELETE FROM refresh_tokens;
+      DELETE FROM password_reset_tokens;
       DELETE FROM oauth_accounts;
       DELETE FROM auth_codes;
       DELETE FROM users;

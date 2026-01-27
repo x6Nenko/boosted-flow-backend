@@ -6,4 +6,5 @@ export * from './time-entries';
 export * from './refresh-tokens';
 export * from './oauth-accounts';
 export * from './auth-codes';
+export * from './password-reset-tokens';
 export * from './relations';

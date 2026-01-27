@@ -5,7 +5,7 @@ import { users, oauthAccounts } from '../database/schema';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(private readonly databaseService: DatabaseService) { }
 
   private normalizeEmail(email: string): string {
     return email.toLowerCase().trim();
@@ -105,5 +105,15 @@ export class UsersService {
     return this.databaseService.db.query.users.findFirst({
       where: eq(users.id, id),
     });
+  }
+
+  async updatePassword(userId: string, hashedPassword: string): Promise<void> {
+    await this.databaseService.db
+      .update(users)
+      .set({
+        hashedPassword,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(users.id, userId));
   }
 }

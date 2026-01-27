@@ -1,7 +1,7 @@
 # User Authentication Feature
 
 ## High-Level Purpose
-Passport JWT-based authentication with HTTP-only cookie refresh tokens, configurable token lifetimes, conditional refresh token rotation, bcrypt password hashing, OAuth support (Google, extensible to GitHub etc.), and scheduled token cleanup for a NestJS + Drizzle ORM backend.
+Passport JWT-based authentication with HTTP-only cookie refresh tokens, configurable token lifetimes, conditional refresh token rotation, bcrypt password hashing, OAuth support (Google, extensible to GitHub etc.), password reset via email, and scheduled token cleanup for a NestJS + Drizzle ORM backend.
 
 ---
 
@@ -9,7 +9,7 @@ Passport JWT-based authentication with HTTP-only cookie refresh tokens, configur
 ```
 src/
 ├── main.ts                     # CORS + cookie-parser middleware
-├── config/configuration.ts     # JWT secrets + frontend URL + Google OAuth config
+├── config/configuration.ts     # JWT secrets + frontend URL + Google OAuth config + Plunk
 ├── utils/
 │   └── parse-expiration.ts     # Shared utility for parsing time strings to milliseconds
 ├── auth/
@@ -28,7 +28,12 @@ src/
 │   └── dto/
 │       ├── register.dto.ts     # Validation: email, password (8-72 chars)
 │       ├── login.dto.ts        # Validation: email, password
-│       └── exchange-code.dto.ts # Validation: code
+│       ├── exchange-code.dto.ts # Validation: code
+│       ├── forgot-password.dto.ts # Validation: email
+│       └── reset-password.dto.ts  # Validation: token, password
+├── email/
+│   ├── email.module.ts         # Email service module
+│   └── email.service.ts        # Plunk email sending service
 ├── users/
 │   ├── users.module.ts         # Exports UsersService
 │   └── users.service.ts        # User CRUD operations
@@ -40,6 +45,7 @@ src/
     ├── oauth-accounts.ts       # OAuth provider accounts table
     ├── auth-codes.ts           # One-time auth codes for OAuth flow
     ├── refresh-tokens.ts       # Refresh token table definition
+    ├── password-reset-tokens.ts # Password reset token table definition
     └── relations.ts            # Drizzle ORM relations
 ```
 
@@ -100,6 +106,24 @@ src/
 3. **Controller clears cookie** with `clearRefreshTokenCookie(res)`
 4. Response: `204 No Content`
 
+### Forgot Password
+1. `POST /auth/forgot-password` → `ForgotPasswordDto` validates email
+2. `AuthService.createPasswordResetToken()` → looks up user by email
+3. Returns `null` if user not found or is OAuth-only (no password)
+4. Generates UUID token, hashes with SHA-256, stores in `password_reset_tokens` table
+5. Invalidates any existing reset tokens for the user
+6. `EmailService.sendPasswordResetEmail()` → sends email via Plunk API
+7. Response: **Always** `{ message: "If an account exists..." }` (prevents enumeration)
+
+### Reset Password
+1. `POST /auth/reset-password` → `ResetPasswordDto` validates token (UUID) + password (8-72 chars)
+2. `AuthService.resetPassword()` → hashes token, looks up in DB
+3. Validates token exists, not used, not expired (1 hour TTL)
+4. Marks token as used (one-time use)
+5. Hashes new password with bcrypt → `UsersService.updatePassword()`
+6. **Revokes all refresh tokens** for security (forces re-login on all devices)
+7. Response: `{ message: "Password has been reset successfully" }`
+
 ### Protected Routes
 1. `JwtAuthGuard` (extends `AuthGuard('jwt')`) extracts Bearer token from `Authorization` header
 2. `JwtStrategy` validates token with `jwt.secret` → attaches payload to `request.user`
@@ -131,6 +155,9 @@ src/
 | **Response Passthrough** | `@Res({ passthrough: true })` to set cookies + return JSON |
 | **OAuth Account Linking** | `oauth_accounts` table links provider IDs to users |
 | **Auth Code Exchange** | One-time codes prevent token exposure in URLs |
+| **Email Service** | Plunk API for transactional emails (password reset) |
+| **Anti-Enumeration** | Forgot password always returns success, regardless of user existence |
+| **Session Invalidation** | Password reset revokes all refresh tokens |
 
 ---
 
@@ -145,6 +172,8 @@ src/
 @Get('google')     googleAuth(): void  // Redirects to Google
 @Get('google/callback')  googleCallback(@Req() req, @Res() res): void  // Redirects to frontend with code
 @Post('exchange')  exchangeCode(@Body() dto: ExchangeCodeDto, @Res() res): Promise<{ accessToken }>
+@Post('forgot-password')  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message }>
+@Post('reset-password')   resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message }>
 // private: setRefreshTokenCookie(), clearRefreshTokenCookie()
 ```
 
@@ -156,6 +185,8 @@ oauthLogin(provider: string, providerUserId: string, email: string): Promise<str
 exchangeAuthCode(code: string): Promise<TokenPair>
 refresh(refreshToken: string): Promise<TokenPair>  // Conditionally rotates based on age
 logout(refreshToken: string): Promise<void>
+createPasswordResetToken(email: string): Promise<string | null>  // Returns null if user not found
+resetPassword(token: string, newPassword: string): Promise<void>
 // private: generateTokens(), createAuthCode(), hashToken()
 ```
 
@@ -165,7 +196,14 @@ create(email: string, hashedPassword: string): Promise<User>
 findOrCreateOAuthUser(provider: string, providerUserId: string, email: string): Promise<User>
 findByEmail(email: string): Promise<User | undefined>
 findById(id: string): Promise<User | undefined>
+updatePassword(userId: string, hashedPassword: string): Promise<void>
 // private: normalizeEmail()
+```
+
+### EmailService
+```typescript
+sendPasswordResetEmail(to: string, resetUrl: string): Promise<void>
+// private: send()
 ```
 
 ### TokenPair Type
@@ -214,6 +252,16 @@ findById(id: string): Promise<User | undefined>
 | revoked | INTEGER | Boolean (0/1) |
 | createdAt | TEXT | ISO string |
 
+### `password_reset_tokens`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | UUID |
+| userId | TEXT FK | References `users.id` |
+| hashedToken | TEXT | SHA-256 hex hash |
+| expiresAt | TEXT | ISO string (1 hour TTL) |
+| used | INTEGER | Boolean (0/1) |
+| createdAt | TEXT | ISO string |
+
 ---
 
 ## Configuration
@@ -237,6 +285,9 @@ google: {
   clientId: process.env.GOOGLE_CLIENT_ID,      // Google OAuth client ID
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,  // Google OAuth client secret
   callbackUrl: process.env.GOOGLE_CALLBACK_URL  // e.g., http://localhost:3000/auth/google/callback
+},
+plunk: {
+  secretKey: process.env.PLUNK_SECRET_KEY  // Plunk API secret key for transactional emails
 }
 ```
 
@@ -245,6 +296,7 @@ google: {
 - Refresh token: Default = 30 days (`JWT_REFRESH_EXPIRATION`)  
 - Rotation period: Default = 1 hour (`JWT_ROTATION_PERIOD`)  
 - Cookie max age: Default = 30 days (`JWT_COOKIE_MAX_AGE`) - parsed to milliseconds  
+- Password reset token: Fixed 1 hour TTL (hardcoded)
 
 **Expiration Format**: Supports `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Examples: `15m`, `7d`, `1h`  
 **Cookie Settings**: `httpOnly`, `secure` (prod), `sameSite=lax`, `path=/auth`, `maxAge` parsed from time string
@@ -255,6 +307,11 @@ google: {
 3. Add authorized redirect URI: `http://localhost:3000/auth/google/callback`  
 4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` in `.env`
 5. Set `SESSION_SECRET` in `.env` (used by `express-session` for OAuth state storage)
+
+**Plunk Email Setup**:
+1. Create account at [Plunk](https://useplunk.com/)
+2. Get secret key from dashboard (starts with `sk_`)
+3. Set `PLUNK_SECRET_KEY` in `.env`
 
 ---
 
@@ -291,6 +348,11 @@ google: {
 29. **Adding OAuth providers**: Create strategy + guard, reuse `oauthLogin()` with provider name
 30. **OAuth CSRF protection**: `state: true` in strategy options prevents login CSRF attacks
 31. **Email verification requirement**: Only link accounts if provider confirms email is verified
+32. **Forgot password anti-enumeration**: Always returns success message, even if user doesn't exist
+33. **Password reset invalidation**: All refresh tokens revoked after password reset (security)
+34. **OAuth users cannot reset password**: `createPasswordResetToken()` returns `null` for OAuth-only users
+35. **Password reset token one-time use**: Token marked as `used` after successful reset
+36. **Email failures silent**: Forgot password doesn't fail if email sending fails (logged only)
 
 ---
 
