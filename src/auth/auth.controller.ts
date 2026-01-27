@@ -163,7 +163,7 @@ export class AuthController {
     // Send email only if token was created (user exists with password)
     if (token) {
       const frontendUrl = this.configService.get<string>('frontend.url');
-      const resetUrl = `${frontendUrl}/auth/reset-password?token=${token}`;
+      const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
       try {
         await this.emailService.sendPasswordResetEmail(dto.email, resetUrl);
