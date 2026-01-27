@@ -24,5 +24,6 @@ export default () => ({
   },
   plunk: {
     secretKey: process.env.PLUNK_SECRET_KEY,
+    fromEmail: process.env.PLUNK_FROM_EMAIL,
   },
 });

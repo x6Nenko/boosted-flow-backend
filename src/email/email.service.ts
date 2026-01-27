@@ -7,9 +7,11 @@ const PLUNK_API_URL = 'https://next-api.useplunk.com/v1/send';
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly secretKey: string;
+  private readonly fromEmail: string;
 
   constructor(private readonly configService: ConfigService) {
     this.secretKey = this.configService.get<string>('plunk.secretKey')!;
+    this.fromEmail = this.configService.get<string>('plunk.fromEmail')!;
   }
 
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
@@ -31,7 +33,7 @@ export class EmailService {
         Authorization: `Bearer ${this.secretKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ to, subject, body }),
+      body: JSON.stringify({ to, subject, body, from: this.fromEmail }),
     });
 
     const data = await response.json();
