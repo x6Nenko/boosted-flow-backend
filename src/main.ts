@@ -10,6 +10,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  // Enable shutdown hooks for graceful shutdown (required by Terminus)
+  app.enableShutdownHooks();
+
   // Enable CORS with credentials support for HTTP-only cookies
   app.enableCors({
     origin: configService.get<string>('frontend.url'),

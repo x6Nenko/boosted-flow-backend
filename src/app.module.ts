@@ -15,6 +15,7 @@ import { TimeEntriesModule } from './time-entries/time-entries.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { ActivityTasksModule } from './activity-tasks/activity-tasks.module';
 import { TagsModule } from './tags/tags.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TagsModule } from './tags/tags.module';
     ActivitiesModule,
     ActivityTasksModule,
     TagsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
