@@ -13,6 +13,9 @@ process.env.NODE_ENV = 'test'; // turns rate limiting offf
 process.env.JWT_SECRET = 'test-jwt-secret-for-e2e-testing-only';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-for-e2e-testing-only';
 process.env.JWT_COOKIE_MAX_AGE = '30d';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+process.env.GOOGLE_CALLBACK_URL = 'http://localhost:3000/auth/google/callback';
 
 describe('Time Entries (e2e)', () => {
   let app: INestApplication<App>;

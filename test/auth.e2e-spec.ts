@@ -17,6 +17,9 @@ process.env.JWT_ACCESS_EXPIRATION = '1h';
 process.env.JWT_REFRESH_EXPIRATION = '30d';
 process.env.JWT_ROTATION_PERIOD = '1h';
 process.env.JWT_COOKIE_MAX_AGE = '30d';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+process.env.GOOGLE_CALLBACK_URL = 'http://localhost:3000/auth/google/callback';
 
 // Helper function to extract cookies from supertest response headers
 function getCookies(headers: any): string[] {
@@ -444,7 +447,7 @@ describe('Auth (e2e)', () => {
       expect(response.body.message).toBeDefined();
       expect(mockEmailService.sendPasswordResetEmail).toHaveBeenCalledWith(
         user.email,
-        expect.stringContaining('/auth/reset-password?token='),
+        expect.stringContaining('/reset-password?token='),
       );
     });
 

@@ -15,6 +15,9 @@ process.env.JWT_ACCESS_EXPIRATION = '1h';
 process.env.JWT_REFRESH_EXPIRATION = '30d';
 process.env.JWT_ROTATION_PERIOD = '1h';
 process.env.JWT_COOKIE_MAX_AGE = '30d';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+process.env.GOOGLE_CALLBACK_URL = 'http://localhost:3000/auth/google/callback';
 
 function loadAppModule(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
