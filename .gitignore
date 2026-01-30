@@ -4,6 +4,7 @@
 /build
 
 # Logs
+/other-docs
 logs
 *.log
 npm-debug.log*
@@ -27,7 +28,6 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-.github/
 
 # IDE - VSCode
 .vscode/*
