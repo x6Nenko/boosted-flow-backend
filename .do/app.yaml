@@ -13,7 +13,7 @@ services:
     github:
       repo: x6Nenko/boosted-flow-backend
       branch: main
-      deploy_on_push: true
+      deploy_on_push: false
     http_port: 3000
     instance_count: 1
     health_check:
