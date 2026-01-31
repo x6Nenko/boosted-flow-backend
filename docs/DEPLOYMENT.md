@@ -1,19 +1,20 @@
 # Deployment
 
 ## High-Level Purpose
-Automated CI/CD pipeline for deploying NestJS backend to DigitalOcean using Docker, GitHub Actions, and secure secret injection via SSH.
+Automated CI/CD pipeline for deploying NestJS backend to DigitalOcean App Platform using GitHub Actions.
 
 ---
 
 ## Architectural Map
 ```
-.github/workflows/deploy.yml    # CI/CD workflow (test → build → deploy)
+.github/workflows/deploy.yml    # CI/CD workflow (test → deploy)
+.do/app.yaml                    # App Platform specification
 Dockerfile                      # Multi-stage build (builder → production)
-docker-compose.prod.yml         # Production container config
 
-Server: /var/www/boosted-flow-backend/
-├── .env                        # Injected by GitHub Actions (chmod 600)
-└── docker-compose.prod.yml     # Pulls ghcr.io/x6nenko/boosted-flow-backend:latest
+DigitalOcean App Platform:
+├── Builds from Dockerfile      # App Platform handles build
+├── Environment Variables       # Configured in DO Dashboard
+└── Health Checks              # Configured in app.yaml
 ```
 
 ---
@@ -22,30 +23,16 @@ Server: /var/www/boosted-flow-backend/
 
 ### CI/CD Pipeline
 1. Push to `main` → triggers GitHub Actions
-2. **Test job** → ESLint, unit tests, e2e tests
-3. **Build job** → Docker build → push to GHCR (`ghcr.io/x6nenko/boosted-flow-backend:latest`)
-4. **Deploy job** → SSH to server → inject secrets to .env → pull image → restart container
+2. **Test job** → unit tests, e2e tests
+3. **Deploy job** → `digitalocean/app_action/deploy@v2` triggers deployment
+4. App Platform → builds Docker image → deploys container
 5. Health check → `GET /health` returns 200 OK
 
-### Secret Injection (Secure)
-```yaml
-# GitHub Actions injects secrets via SSH
-env:
-  TURSO_DATABASE_URL: ${{ secrets.PROD_TURSO_DATABASE_URL }}
-  JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
-  # ... all 17 secrets
-
-# SSH action receives envs parameter
-envs: TURSO_DATABASE_URL,JWT_SECRET,...
-
-# On server, creates .env file with injected values
-cat > .env << 'EOF'
-TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
-JWT_SECRET=${JWT_SECRET}
-...
-EOF
-chmod 600 .env
-```
+### Environment Variables (Secure)
+Environment variables are managed directly in DigitalOcean Dashboard:
+- **DO Dashboard** → App → Settings → Environment Variables
+- Secrets are encrypted and never exposed in repository
+- No SSH or secret injection needed
 
 ---
 
@@ -53,87 +40,80 @@ chmod 600 .env
 
 | Pattern | Implementation |
 |---------|----------------|
-| **Secret Management** | GitHub Secrets → SSH injection → .env (never committed) |
+| **Secret Management** | DO Dashboard Environment Variables (encrypted) |
 | **Docker Multi-stage** | Builder (deps + build) → Production (runtime only) |
 | **Non-root Container** | Runs as `nestjs` user (UID 1001) |
-| **Health Checks** | Docker monitors `/health` every 30s |
-| **Log Rotation** | Max 10MB per file, 3 files retained |
+| **Health Checks** | App Platform monitors `/health` endpoint |
+| **Auto-deploy** | Deploys on push to `main` branch |
 
 ---
 
-## Required GitHub Secrets
+## Required Secrets
 
-**Server Access:**
-- `SERVER_HOST` - Droplet IP
-- `SERVER_USERNAME` - SSH user (e.g., `sammy`)
-- `SERVER_SSH_KEY` - Private SSH key
+### GitHub Repository Secrets
+Only one secret needed:
+- `DIGITALOCEAN_ACCESS_TOKEN` - DO API token with App Platform read/write permissions
 
-**Application (prefix PROD_):**
-- `PROD_TURSO_DATABASE_URL`, `PROD_TURSO_AUTH_TOKEN`
-- `PROD_JWT_SECRET`, `PROD_JWT_REFRESH_SECRET`
-- `PROD_JWT_ACCESS_EXPIRATION`, `PROD_JWT_REFRESH_EXPIRATION`
-- `PROD_JWT_COOKIE_MAX_AGE`, `PROD_JWT_ROTATION_PERIOD`
-- `PROD_FRONTEND_URL`
-- `PROD_GOOGLE_CLIENT_ID`, `PROD_GOOGLE_CLIENT_SECRET`, `PROD_GOOGLE_CALLBACK_URL`
-- `PROD_SESSION_SECRET`
-- `PROD_PLUNK_PUBLIC_KEY`, `PROD_PLUNK_SECRET_KEY`, `PROD_PLUNK_FROM_EMAIL`
-- `PROD_PADDLE_API_KEY`
+### DigitalOcean App Environment Variables
+Configure in **DO Dashboard → App → Settings → Environment Variables**:
+
+| Variable | Description |
+|----------|-------------|
+| `TURSO_DATABASE_URL` | Turso database connection URL |
+| `TURSO_AUTH_TOKEN` | Turso authentication token |
+| `JWT_SECRET` | JWT signing secret |
+| `JWT_REFRESH_SECRET` | JWT refresh token secret |
+| `JWT_ACCESS_EXPIRATION` | Access token expiration (e.g., `15m`) |
+| `JWT_REFRESH_EXPIRATION` | Refresh token expiration (e.g., `7d`) |
+| `JWT_COOKIE_MAX_AGE` | Cookie max age in milliseconds |
+| `JWT_ROTATION_PERIOD` | Token rotation period |
+| `FRONTEND_URL` | Frontend application URL |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GOOGLE_CALLBACK_URL` | Google OAuth callback URL |
+| `SESSION_SECRET` | Express session secret |
+| `PLUNK_PUBLIC_KEY` | Plunk email public key |
+| `PLUNK_SECRET_KEY` | Plunk email secret key |
+| `PLUNK_FROM_EMAIL` | Sender email address |
+| `PADDLE_API_KEY` | Paddle payments API key |
+
+> **Tip**: Mark sensitive values as "Encrypted" in DO Dashboard for additional security.
 
 Generate secrets: `openssl rand -base64 48`
 
 ---
 
-## docker-compose.prod.yml
-```yaml
-version: '3.8'
+## App Specification (`.do/app.yaml`)
 
-services:
-  app:
-    image: ghcr.io/x6nenko/boosted-flow-backend:latest
-    container_name: boosted-flow-backend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    env_file: .env
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
+The app spec defines how App Platform builds and runs the application:
+- Uses Dockerfile for builds
+- Configures health checks
+- Sets instance size and count
+- Enables auto-deploy on push
 
 ---
 
 ## Common Operations
 
 ### View Logs
+In DO Dashboard → App → Runtime Logs
+
+Or via CLI:
 ```bash
-docker logs -f boosted-flow-backend
-docker logs boosted-flow-backend --tail 100
+doctl apps logs <app-id> --type=run
 ```
 
 ### Rollback
-```bash
-# List images
-docker images | grep boosted-flow-backend
-
-# Edit docker-compose.prod.yml to use specific SHA
-image: ghcr.io/x6nenko/boosted-flow-backend:SHA_HASH
-
-# Restart
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d
-```
+In DO Dashboard → App → Deployments → select previous deployment → Rollback
 
 ### Database Migrations
+Access via DO Dashboard → App → Console:
 ```bash
-docker exec boosted-flow-backend npm run db:migrate
+npm run db:migrate
 ```
+
+### Force Rebuild
+DO Dashboard → App → Actions → Force Rebuild
 
 ---
 
@@ -141,7 +121,28 @@ docker exec boosted-flow-backend npm run db:migrate
 
 | Issue | Solution |
 |-------|----------|
-| **Container won't start** | `docker logs boosted-flow-backend` → check env vars |
-| **Health check fails** | `curl http://localhost:3000/health` → verify DB connection |
-| **502 Bad Gateway** | Check Nginx logs: `sudo tail -f /var/log/nginx/error.log` |
-| **Image pull fails** | Verify GHCR permissions: Repo → Settings → Actions → Workflow permissions |
+| **Build fails** | Check build logs in DO Dashboard → App → Deployments |
+| **Health check fails** | Verify `/health` endpoint and env vars are configured |
+| **Deployment stuck** | Check runtime logs, verify environment variables |
+| **502 errors** | Check if app started correctly, verify PORT=3000 |
+
+---
+
+## Migration from Droplet
+
+If migrating from a Droplet deployment:
+
+1. **Remove old GitHub Secrets** (no longer needed):
+   - `SERVER_HOST`, `SERVER_USERNAME`, `SERVER_SSH_KEY`
+   - All `PROD_*` prefixed secrets
+
+2. **Add new GitHub Secret**:
+   - `DIGITALOCEAN_ACCESS_TOKEN`
+
+3. **Configure DO App Environment Variables**:
+   - Add all application secrets in DO Dashboard (without `PROD_` prefix)
+
+4. **Create App in DO**:
+   - First deployment: Create app via DO Dashboard connecting to GitHub repo
+   - This authenticates GitHub and creates the app
+   - Subsequent deploys: Automatic via GitHub Actions

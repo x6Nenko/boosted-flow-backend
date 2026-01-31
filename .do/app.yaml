@@ -1,0 +1,32 @@
+name: boosted-flow-backend
+region: fra
+features:
+  - buildpack-stack=ubuntu-22
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+
+services:
+  - name: api
+    dockerfile_path: Dockerfile
+    github:
+      repo: x6Nenko/boosted-flow-backend
+      branch: main
+      deploy_on_push: true
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    # Environment variables are configured in DO Dashboard → App → Settings → Environment Variables
+    # This keeps secrets secure and not stored in the repository
+    envs:
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
