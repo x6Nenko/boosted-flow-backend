@@ -127,6 +127,15 @@ export class AuthController {
     @Req() req: express.Request,
     @Res() res: express.Response,
   ) {
+    console.log('=== GOOGLE CALLBACK CONTROLLER ===');
+    console.log('Request URL:', req.url);
+    console.log('Request query:', req.query);
+    console.log('Session ID:', req.sessionID);
+    console.log('Session exists:', !!req.session);
+    console.log('User exists:', !!req.user);
+    console.log('Headers x-forwarded-proto:', req.headers['x-forwarded-proto']);
+    console.log('=== END CALLBACK DEBUG ===');
+
     const { providerUserId, email } = req.user as {
       providerUserId: string;
       email: string;
