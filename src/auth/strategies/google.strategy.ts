@@ -21,12 +21,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: any,
     done: VerifyCallback,
   ): Promise<void> {
-    console.log('=== GOOGLE STRATEGY VALIDATE ===');
-    console.log('Profile ID:', profile?.id);
-    console.log('Emails:', profile?.emails);
-    console.log('Access Token exists:', !!accessToken);
-    console.log('=== END GOOGLE STRATEGY ===');
-
     const { id, emails } = profile;
     const email = emails?.[0]?.value;
     const emailVerified = profile._json?.email_verified;
