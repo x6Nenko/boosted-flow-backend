@@ -48,10 +48,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Deploy to DigitalOcean App Platform
-        run: doctl apps create-deployment boosted-flow-api --wait
+        uses: digitalocean/app_action/deploy@v2.0.10
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_name: boosted-flow-api
