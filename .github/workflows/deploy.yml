@@ -55,5 +55,6 @@ jobs:
         uses: digitalocean/app_action/deploy@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_name: boosted-flow-api
           print_build_logs: true
           print_deploy_logs: true
