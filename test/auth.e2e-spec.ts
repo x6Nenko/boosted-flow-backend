@@ -7,6 +7,7 @@ import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
 import { EmailService } from './../src/email/email.service';
+import { TurnstileGuard } from './../src/auth/guards/turnstile.guard';
 import { users, passwordResetTokens } from '../src/database/schema';
 
 // Load test env vars before anything else
@@ -54,6 +55,8 @@ describe('Auth (e2e)', () => {
       .useValue(testDbService)
       .overrideProvider(EmailService)
       .useValue(mockEmailService)
+      .overrideGuard(TurnstileGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleFixture.createNestApplication();

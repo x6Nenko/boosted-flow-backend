@@ -23,6 +23,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Public } from './decorators/public.decorator';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { TurnstileGuard } from './guards/turnstile.guard';
 import { parseExpiration } from '../utils/parse-expiration';
 import { EmailService } from '../email/email.service';
 
@@ -38,6 +39,7 @@ export class AuthController {
   ) { }
 
   @Public()
+  @UseGuards(TurnstileGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
   @Post('register')
   async register(
@@ -55,6 +57,7 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(TurnstileGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -154,6 +157,7 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(TurnstileGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
@@ -177,6 +181,7 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(TurnstileGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)

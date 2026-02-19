@@ -26,4 +26,7 @@ export default () => ({
     secretKey: process.env.PLUNK_SECRET_KEY,
     fromEmail: process.env.PLUNK_FROM_EMAIL,
   },
+  turnstile: {
+    secretKey: process.env.TURNSTILE_SECRET_KEY,
+  },
 });

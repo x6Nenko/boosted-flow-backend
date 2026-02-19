@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
+import { TurnstileGuard } from './../src/auth/guards/turnstile.guard';
 
 // IMPORTANT:
 // Rate limiting is disabled in AppModule when NODE_ENV === 'test'.
@@ -37,6 +38,8 @@ describe('Auth Rate Limiting (e2e)', () => {
     })
       .overrideProvider(DatabaseService)
       .useValue(testDbService)
+      .overrideGuard(TurnstileGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleFixture.createNestApplication();

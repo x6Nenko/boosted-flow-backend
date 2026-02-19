@@ -21,7 +21,8 @@ src/
 │   │   └── google.strategy.ts  # Passport Google OAuth strategy
 │   ├── guards/
 │   │   ├── jwt-auth.guard.ts   # Global JWT guard (extends AuthGuard('jwt'))
-│   │   └── google-auth.guard.ts # Google OAuth guard (extends AuthGuard('google'))
+│   │   ├── google-auth.guard.ts # Google OAuth guard (extends AuthGuard('google'))
+│   │   └── turnstile.guard.ts  # Cloudflare Turnstile CAPTCHA verification
 │   ├── decorators/
 │   │   ├── public.decorator.ts      # Marks routes as public (bypasses auth)
 │   │   └── current-user.decorator.ts # Extracts user from request
@@ -54,7 +55,7 @@ src/
 ## Data Flow
 
 ### Registration
-1. `POST /auth/register` → `RegisterDto` validates email + password (8-72 chars)
+1. `POST /auth/register` → `TurnstileGuard` validates CAPTCHA token → `RegisterDto` validates email + password (8-72 chars)
 2. `AuthService.register()` → checks email uniqueness via `UsersService.findByEmail()`
 3. Password hashed with `bcrypt.hash(password, 12)` (cost factor 12)
 4. `UsersService.create()` → inserts user with UUID, normalized email, timestamps
@@ -64,7 +65,7 @@ src/
 8. Response: **Body:** `{ accessToken }`, **Cookie:** `refreshToken=...`
 
 ### Login
-1. `POST /auth/login` → `LoginDto` validates input
+1. `POST /auth/login` → `TurnstileGuard` validates CAPTCHA token → `LoginDto` validates input
 2. Fetch user by email → `bcrypt.compare()` validates password
 3. `generateTokens()` → new token pair issued with configured expiration times
 4. **Controller sets HTTP-only cookie** with refresh token
@@ -107,7 +108,7 @@ src/
 4. Response: `204 No Content`
 
 ### Forgot Password
-1. `POST /auth/forgot-password` → `ForgotPasswordDto` validates email
+1. `POST /auth/forgot-password` → `TurnstileGuard` validates CAPTCHA token → `ForgotPasswordDto` validates email
 2. `AuthService.createPasswordResetToken()` → looks up user by email
 3. Returns `null` if user not found or is OAuth-only (no password)
 4. Generates UUID token, hashes with SHA-256, stores in `password_reset_tokens` table
@@ -116,7 +117,7 @@ src/
 7. Response: **Always** `{ message: "If an account exists..." }` (prevents enumeration)
 
 ### Reset Password
-1. `POST /auth/reset-password` → `ResetPasswordDto` validates token (UUID) + password (8-72 chars)
+1. `POST /auth/reset-password` → `TurnstileGuard` validates CAPTCHA token → `ResetPasswordDto` validates token (UUID) + password (8-72 chars)
 2. `AuthService.resetPassword()` → hashes token, looks up in DB
 3. Validates token exists, not used, not expired (1 hour TTL)
 4. Marks token as used (one-time use)
@@ -147,6 +148,7 @@ src/
 | **Session Middleware** | `express-session` in `main.ts` for OAuth state storage |
 | **CORS with Credentials** | `credentials: true` + exact `origin` match for cookie support |
 | **Rate Limiting** | `@Throttle({ default: { limit: 10, ttl: 60000 } })` per endpoint |
+| **Turnstile CAPTCHA** | `TurnstileGuard` on register, login, forgot-password, reset-password; validates via Cloudflare API |
 | **Async JWT Config** | `JwtModule.registerAsync()` with `ConfigService` injection |
 | **Conditional Token Rotation** | Refresh token rotated only when age exceeds `JWT_ROTATION_PERIOD` |
 | **Token Reuse** | Same refresh token returned when rotation period not exceeded |
@@ -288,6 +290,9 @@ google: {
 },
 plunk: {
   secretKey: process.env.PLUNK_SECRET_KEY  // Plunk API secret key for transactional emails
+},
+turnstile: {
+  secretKey: process.env.TURNSTILE_SECRET_KEY  // Cloudflare Turnstile CAPTCHA secret key
 }
 ```
 
@@ -312,6 +317,12 @@ plunk: {
 1. Create account at [Plunk](https://useplunk.com/)
 2. Get secret key from dashboard (starts with `sk_`)
 3. Set `PLUNK_SECRET_KEY` in `.env`
+
+**Cloudflare Turnstile Setup**:
+1. Add site in [Cloudflare Turnstile dashboard](https://dash.cloudflare.com/?to=/:account/turnstile)
+2. Get secret key from dashboard
+3. Set `TURNSTILE_SECRET_KEY` in `.env`
+4. For local development, use always-pass secret key `1x0000000000000000000000000000000AA`
 
 ---
 
@@ -353,6 +364,9 @@ plunk: {
 34. **OAuth users cannot reset password**: `createPasswordResetToken()` returns `null` for OAuth-only users
 35. **Password reset token one-time use**: Token marked as `used` after successful reset
 36. **Email failures silent**: Forgot password doesn't fail if email sending fails (logged only)
+37. **Turnstile CAPTCHA**: Guard runs before validation pipe; reads `turnstileToken` from raw `request.body`
+38. **Turnstile protected endpoints**: register, login, forgot-password, reset-password
+39. **Turnstile dev testing**: Use Cloudflare's always-pass site key `1x00000000000000000000AA` with secret `1x0000000000000000000000000000000AA`
 
 ---
 

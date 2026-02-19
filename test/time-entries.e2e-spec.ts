@@ -7,6 +7,7 @@ import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { TestDatabaseService } from './setup/test-database.service';
 import { timeEntries } from '../src/database/schema';
+import { TurnstileGuard } from './../src/auth/guards/turnstile.guard';
 
 // Load test env vars before anything else
 process.env.NODE_ENV = 'test'; // turns rate limiting offf
@@ -47,6 +48,8 @@ describe('Time Entries (e2e)', () => {
     })
       .overrideProvider(DatabaseService)
       .useValue(testDbService)
+      .overrideGuard(TurnstileGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleFixture.createNestApplication();
